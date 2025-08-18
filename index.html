@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Copiloto Legal: Comparador Legislativo Inteligente</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Library for Word export -->
+    <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
+    <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <!-- Library for Diff viewer -->
+    <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #resultsTable th, #resultsTable td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            vertical-align: top;
+        }
+        #resultsTable th {
+            background-color: #f2f2f2;
+            text-align: left;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 2rem auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Styles for Diff Viewer */
+        ins {
+            background-color: #d4edda; /* Light green */
+            text-decoration: none;
+        }
+        del {
+            background-color: #f8d7da; /* Light red */
+            text-decoration: line-through;
+        }
+        /* Custom modal for alerts */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 90%;
+            width: 400px;
+        }
+        .modal-button {
+            margin-top: 1.5rem;
+            padding: 0.5rem 1.5rem;
+            border-radius: 0.375rem;
+            background-color: #2563eb;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex flex-col min-h-screen">
+
+    <div class="container mx-auto p-4 md:p-8 flex-grow">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Copiloto Legal</h1>
+            <p class="text-gray-600 mt-2">Su asistente para la generación de indicaciones y tablas comparativas de textos legales.</p>
+        </header>
+
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <label for="apiKey" class="block text-lg font-semibold mb-2">Your Gemini API Key</label>
+            <input type="password" id="apiKey" class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Paste your API key here to enable the tool">
+            <p class="text-sm text-gray-500 mt-2">Su clave se utiliza únicamente en su navegador y nunca se almacena.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-4">Texto Original Completo</h2>
+                <textarea id="originalText" class="w-full h-96 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 transition" placeholder="Pegue aquí la columna completa del texto original..."></textarea>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-4">Texto Final Completo</h2>
+                <textarea id="finalText" class="w-full h-96 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 transition" placeholder="Pegue aquí la columna completa del texto final modificado..."></textarea>
+            </div>
+        </div>
+
+        <div class="text-center my-8">
+            <button id="generateButton" class="bg-green-600 text-white font-bold py-3 px-8 rounded-lg shadow-lg hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-300 transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                Generar Tabla Comparativa
+            </button>
+        </div>
+
+        <div id="outputSection" class="bg-white p-6 rounded-lg shadow-md hidden">
+             <div class="flex justify-between items-center mb-4">
+                 <h2 class="text-xl font-semibold">Resultado Comparativo <span id="timerResult" class="text-sm font-normal text-gray-500 ml-2"></span></h2>
+                 <button id="exportButton" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition">
+                     Exportar a Word
+                 </button>
+             </div>
+             <div id="resultsContainer" class="w-full overflow-x-auto">
+                 <!-- The results table will be rendered here -->
+             </div>
+        </div>
+    </div>
+
+    <footer class="text-center p-4 text-gray-500 text-sm">
+        <p>Copiloto Legal v4.0.0 | Última actualización: 18 de Agosto, 2025</p>
+    </footer>
+
+    <!-- Modal for custom alerts -->
+    <div id="customAlert" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <p id="alertMessage"></p>
+            <button id="alertCloseButton" class="modal-button">Cerrar</button>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('generateButton').addEventListener('click', generateIndications);
+        document.getElementById('exportButton').addEventListener('click', exportToWord);
+        document.getElementById('alertCloseButton').addEventListener('click', () => {
+            document.getElementById('customAlert').classList.add('hidden');
+        });
+
+        function showAlert(message) {
+            document.getElementById('alertMessage').textContent = message;
+            document.getElementById('customAlert').classList.remove('hidden');
+        }
+
+        function cleanTextForJson(text) {
+            let cleaned = text.trim();
+            if (cleaned.startsWith('```json')) {
+                cleaned = cleaned.substring(7);
+            } else if (cleaned.startsWith('```')) {
+                 cleaned = cleaned.substring(3);
+            }
+            if (cleaned.endsWith('```')) {
+                cleaned = cleaned.slice(0, -3);
+            }
+            return cleaned.trim();
+        }
+        
+        function renderTable(articles) {
+            const container = document.getElementById('resultsContainer');
+            container.innerHTML = ''; 
+
+            if (!articles || articles.length === 0) {
+                container.textContent = 'No se encontraron artículos o no se pudo procesar el texto.';
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.id = 'resultsTable';
+            table.className = 'w-full border-collapse';
+
+            const thead = document.createElement('thead');
+            thead.innerHTML = `
+                <tr>
+                    <th class="w-1/3 p-2 border bg-gray-100">Texto Original (con cambios)</th>
+                    <th class="w-1/3 p-2 border bg-gray-100">Indicaciones Generadas</th>
+                    <th class="w-1/3 p-2 border bg-gray-100">Texto Final (con cambios)</th>
+                </tr>
+            `;
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            articles.forEach(article => {
+                const diff = Diff.diffWords(article.textoOriginal, article.textoFinal, { ignoreWhitespace: true });
+                let originalHtml = '';
+                let finalHtml = '';
+
+                diff.forEach(part => {
+                    const value = part.value.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                    if (part.added) {
+                        finalHtml += `<ins>${value}</ins>`;
+                    } else if (part.removed) {
+                        originalHtml += `<del>${value}</del>`;
+                    } else {
+                        originalHtml += value;
+                        finalHtml += value;
+                    }
+                });
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="p-2 border align-top whitespace-pre-wrap">${originalHtml}</td>
+                    <td class="p-2 border align-top whitespace-pre-wrap">${article.indicaciones.replace(/\n/g, '<br>')}</td>
+                    <td class="p-2 border align-top whitespace-pre-wrap">${finalHtml}</td>
+                `;
+                tbody.appendChild(row);
+            });
+            table.appendChild(tbody);
+            container.appendChild(table);
+
+            document.getElementById('outputSection').classList.remove('hidden');
+        }
+
+        async function generateIndications() {
+            const apiKey = document.getElementById('apiKey').value;
+            const originalText = document.getElementById('originalText').value;
+            const finalText = document.getElementById('finalText').value;
+            const resultsContainer = document.getElementById('resultsContainer');
+            const outputSection = document.getElementById('outputSection');
+            const generateButton = document.getElementById('generateButton');
+            const timerResult = document.getElementById('timerResult');
+            
+            if (!apiKey) {
+                showAlert('Por favor, ingrese su clave de API de Gemini para continuar.');
+                return;
+            }
+            
+            if (!originalText.trim() || !finalText.trim()) {
+                showAlert('Por favor, pegue el texto en ambas columnas para generar las indicaciones.');
+                return;
+            }
+
+            generateButton.disabled = true;
+            generateButton.textContent = 'Generando...';
+            outputSection.classList.remove('hidden');
+            resultsContainer.innerHTML = '<div class="loader"></div>';
+            timerResult.textContent = ''; 
+
+            const startTime = performance.now(); 
+
+            try {
+                const prompt = `
+**Rol y Objetivo:**
+Eres un asesor legal experto, especializado en la redacción de leyes en Chile. Tu tarea es analizar dos versiones de un texto legal ('Texto Original' y 'Texto Final') y generar una **"Propuesta de Indicaciones"** que consolide TODOS los cambios en una lista única y numerada consecutivamente, utilizando la terminología y nomenclatura oficial de la ley chilena.
+
+---
+
+**1. TAREA PRINCIPAL: LISTA ÚNICA Y CONSECUTIVA**
+
+Tu objetivo es producir una sola lista de indicaciones para todo el documento. Cada indicación individual debe estar numerada, y esta numeración DEBE ser continua a lo largo de todos los artículos. NO reinicies el conteo en cada nuevo artículo.
+
+---
+
+**2. INSTRUCCIONES DE FORMATO DE SALIDA (JSON OBLIGATORIO)**
+
+Tu respuesta DEBE ser un único objeto JSON válido. Este objeto debe contener una clave "articulos" cuyo valor es un array de objetos. Cada objeto en el array representa un artículo del texto original.
+
+- \`textoOriginal\`: El texto completo del artículo en la versión original.
+- \`indicaciones\`: La "Propuesta de Indicaciones" para ese artículo.
+    - Si hay cambios, el texto comenzará con "AL ARTÍCULO [N°]" seguido de una o más indicaciones numeradas.
+    - Si no hay cambios, este valor DEBE ser una cadena vacía ("").
+- \`textoFinal\`: El texto completo del artículo en la versión final.
+
+---
+
+**3. REGLAS CRÍTICAS PARA GENERAR EL CONTENIDO DE "INDICACIONES"**
+
+**A. REGLA CRÍTICA: NUMERACIÓN CONSECUTIVA Y CONTINUA**
+- La numeración de las indicaciones (1.-, 2.-, 3.-, etc.) es la parte más importante.
+- DEBES mantener un contador único para todo el documento. Si el Artículo 1 tiene dos indicaciones (1.- y 2.-), la primera indicación del siguiente artículo modificado (p. ej., Artículo 5) DEBE ser 3.-.
+
+**EJEMPLO DE NUMERACIÓN CONTINUA (FORMATO OBLIGATORIO):**
+\`\`\`
+// Indicaciones para el Artículo 2
+"indicaciones": "AL ARTÍCULO 2°\\n1.- Para reemplazar, en su inciso primero, el vocablo “treinta” por “sesenta”.\\n2.- Para suprimir, en su inciso segundo, la frase “y sin ulterior recurso”."
+
+// Indicaciones para el Artículo 5 (el siguiente con cambios)
+"indicaciones": "AL ARTÍCULO 5°\\n3.- Para sustituir su inciso final por el siguiente: “[Texto nuevo]”."
+\`\`\`
+
+**B. ANÁLISIS, ESTRUCTURA Y PRINCIPIOS DE REDACCIÓN**
+1.  **Analizar con Precisión:** Compara 'Texto Original' y 'Texto Final' para identificar todas las adiciones, eliminaciones y sustituciones.
+2.  **Identificar la Unidad de Cambio Mínima (CRÍTICO):** Antes de concluir que un 'inciso' completo ha sido modificado, verifica si el cambio es más pequeño. Sé lo más específico posible: ¿es una 'frase', 'expresión', 'palabra' o 'guarismo'?
+3.  **Dar Contexto:** Especifica siempre el 'inciso', 'numeral' o 'literal' afectado.
+4.  **Principio de Ahorro y Agrupación (OBLIGATORIO):**
+    - **Acciones Múltiples en el Mismo Inciso:** Si realizas varias acciones diferentes en el mismo inciso, enuncia la ubicación una sola vez y detalla las acciones con literales (i, ii, iii). **Ejemplo:** \`AL ARTÍCULO X\\n1.- Para modificar su inciso tercero en el siguiente sentido:\\ni. Suprímase la expresión "no podrá exceder".\\nii. Intercálase, entre la expresión "tasa monetaria" y "ajustada", la frase "anual".\\niii. Reemplázase el guarismo "25" por "35".\`
+    - **Una Sola Modificación:** Si un artículo tiene una única modificación, redáctala directamente sin el encabezado "Para modificar...". **Ejemplo:** \`AL ARTÍCULO X\\n2.- Para reemplazar, en el inciso segundo, la palabra "actual" por "anual".\`
+5.  **Múltiples Cambios en Distintos Incisos:** Si un artículo tiene modificaciones en distintos incisos, cada cambio en un inciso diferente DEBE ser una nueva indicación numerada en la lista consecutiva general.
+6.  **Agregar Artículos Nuevos:** Usa el formato \`ARTÍCULO X, NUEVO\` para indicar la adición de un nuevo artículo.
+
+**C. GLOSARIO DE TERMINOLOGÍA (USO OBLIGATORIO)**
+- **Verbos de Acción:**
+    - *reemplázase / sustitúyese:* Usar cuando se sustituye información. \`sustitúyese\` es para bloques grandes (un \`inciso\` completo), mientras que \`reemplázase\` es para unidades más pequeñas (\`expresión\`, \`frase\`, \`palabra\`).
+    - *incorpórase / agrégase / añádese:* Usar cuando se añade nueva información.
+    - *suprímese / elimínase:* Usar cuando se elimina información.
+    - *intercálese:* Usar específicamente cuando se añade información entre palabras existentes.
+    - *modifícase:* Usar solo como verbo introductorio para agrupar cambios en un inciso.
+- **Sustantivos para Unidades de Texto:**
+    - *la expresión, la frase, la oración, la palabra / el vocablo, el inciso, el guarismo*.
+
+---
+
+**4. ANÁLISIS DE TEXTOS**
+
+Procesa el documento completo usando "Artículo [N°]" o "ARTÍCULO [N°]" como delimitador. Incluye TODOS los artículos en el array JSON, incluso si no tienen cambios.
+
+**Texto Original:**
+\`\`\`
+${originalText}
+\`\`\`
+
+**Texto Final:**
+\`\`\`
+${finalText}
+\`\`\`
+
+---
+
+Ahora, genera la "Propuesta de Indicaciones" como una lista única y numerada consecutivamente con la máxima precisión.
+`;
+                
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                
+                const payload = {
+                    contents: [{ role: "user", parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                    }
+                };
+
+                const maxRetries = 5;
+                let delay = 1000;
+
+                for (let i = 0; i < maxRetries; i++) {
+                    try {
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (response.ok) {
+                            const result = await response.json();
+                            const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                            if (jsonText) {
+                                const cleanedJson = cleanTextForJson(jsonText);
+                                const data = JSON.parse(cleanedJson);
+                                renderTable(data.articulos);
+
+                                const endTime = performance.now();
+                                const duration = ((endTime - startTime) / 1000).toFixed(2);
+                                timerResult.textContent = `(Generado en ${duration} segundos)`;
+
+                            } else {
+                                throw new Error('La respuesta de la API no contiene texto.');
+                            }
+                            return; // Exit loop on success
+                        }
+
+                        if (response.status === 503 || response.status === 429) { // Handle overloaded and rate limit errors
+                             if (i === maxRetries - 1) throw new Error(`El modelo está sobrecargado. Falló después de ${maxRetries} intentos.`);
+                             await new Promise(resolve => setTimeout(resolve, delay));
+                             delay *= 2; 
+                        } else {
+                            const errorBody = await response.text();
+                            throw new Error(`La solicitud a la API falló con el estado ${response.status}: ${errorBody}`);
+                        }
+
+                    } catch (error) {
+                        if (i === maxRetries - 1) throw error; // Throw last error
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2;
+                    }
+                }
+
+            } catch (error) {
+                console.error('Error al llamar a la API de Gemini:', error);
+                resultsContainer.innerHTML = `<p class="text-red-500">Ocurrió un error al generar las indicaciones. Por favor, revise la consola para más detalles. Error: ${error.message}</p>`;
+            } finally {
+                generateButton.disabled = false;
+                generateButton.textContent = 'Generar Tabla Comparativa';
+            }
+        }
+
+        function exportToWord() {
+            const table = document.getElementById('resultsTable');
+            if (!table) {
+                showAlert("No hay resultados para exportar.");
+                return;
+            }
+            
+            // Create a clone to manipulate for export without affecting the displayed table
+            const tableClone = table.cloneNode(true);
+            
+            // Convert <br> tags back to newlines for proper formatting in Word
+            tableClone.querySelectorAll('br').forEach(br => br.parentNode.replaceChild(document.createTextNode('\n'), br));
+
+            tableClone.style.borderCollapse = 'collapse';
+            tableClone.style.width = '100%';
+            const cells = tableClone.querySelectorAll('th, td');
+            cells.forEach(cell => {
+                cell.style.border = '1px solid black';
+                cell.style.padding = '5px';
+                cell.style.verticalAlign = 'top';
+            });
+            
+            const content = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <style>
+                        body { font-family: 'Times New Roman', Times, serif; }
+                        table { border-collapse: collapse; width: 100%; }
+                        th, td { border: 1px solid black; padding: 8px; text-align: left; vertical-align: top; white-space: pre-wrap; }
+                        th { background-color: #f2f2f2; }
+                        ins { background-color: #d4edda; text-decoration: none; }
+                        del { background-color: #f8d7da; text-decoration: line-through; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Tabla Comparativa de Indicaciones</h1>
+                    ${tableClone.outerHTML}
+                </body>
+                </html>
+            `;
+            
+            var converted = htmlDocx.asBlob(content);
+            saveAs(converted, 'Tabla_Comparativa_Indicaciones.docx');
+        }
+    </script>
+</body>
+</html>
