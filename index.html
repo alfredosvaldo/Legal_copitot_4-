@@ -121,7 +121,7 @@
     </div>
 
     <footer class="text-center p-4 text-gray-500 text-sm">
-        <p>Copiloto Legal v4.3.0 | Última actualización: 19 de Agosto, 2025</p>
+        <p>Copiloto Legal v4.4.0 (Stable) | Última actualización: 19 de Agosto, 2025</p>
     </footer>
 
     <div id="customAlert" class="modal-backdrop hidden">
@@ -144,6 +144,7 @@
         }
 
         function cleanTextForJson(text) {
+            if (typeof text !== 'string') return ''; // Safety check
             let cleaned = text.trim();
             if (cleaned.startsWith('```json')) {
                 cleaned = cleaned.substring(7);
@@ -181,7 +182,14 @@
 
             const tbody = document.createElement('tbody');
             articles.forEach(article => {
-                const diff = Diff.diffWords(article.textoOriginal, article.textoFinal, { ignoreWhitespace: true });
+                // *** INICIO DE LA CORRECCIÓN MEJORADA ***
+                // Se añaden verificaciones para todas las propiedades de texto para máxima seguridad.
+                const originalText = article.textoOriginal || '';
+                const finalText = article.textoFinal || '';
+                const indicationsText = article.indicaciones || '';
+                // *** FIN DE LA CORRECCIÓN MEJORADA ***
+
+                const diff = Diff.diffWords(originalText, finalText, { ignoreWhitespace: true });
                 let originalHtml = '';
                 let finalHtml = '';
 
@@ -198,17 +206,11 @@
                 });
 
                 const row = document.createElement('tr');
-                
-                // *** INICIO DE LA CORRECCIÓN ***
-                // Se cambió article.indicaciones.replace por (article.indicaciones || '').replace
-                // para evitar el error si la propiedad "indicaciones" no existe.
                 row.innerHTML = `
                     <td class="p-2 border align-top whitespace-pre-wrap">${originalHtml}</td>
-                    <td class="p-2 border align-top whitespace-pre-wrap">${(article.indicaciones || '').replace(/\n/g, '<br>')}</td>
+                    <td class="p-2 border align-top whitespace-pre-wrap">${indicationsText.replace(/\n/g, '<br>')}</td>
                     <td class="p-2 border align-top whitespace-pre-wrap">${finalHtml}</td>
                 `;
-                // *** FIN DE LA CORRECCIÓN ***
-
                 tbody.appendChild(row);
             });
             table.appendChild(tbody);
@@ -369,10 +371,8 @@ Ahora, aplicando el PROCESO DE ANÁLISIS OBLIGATORIO, genera el JSON.
                 return;
             }
             
-            // Create a clone to manipulate for export without affecting the displayed table
             const tableClone = table.cloneNode(true);
             
-            // Convert <br> tags back to newlines for proper formatting in Word
             tableClone.querySelectorAll('br').forEach(br => br.parentNode.replaceChild(document.createTextNode('\n'), br));
 
             tableClone.style.borderCollapse = 'collapse';
