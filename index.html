@@ -241,56 +241,42 @@
             try {
                                 const prompt = `
 **Rol y Objetivo:**
-Eres un asesor legal experto, especializado en la redacción de leyes en Chile. Tu tarea es analizar dos versiones de un texto legal ('Texto Original' y 'Texto Final') y generar una **"Propuesta de Indicaciones"** que consolide TODOS los cambios en una lista única y numerada consecutivamente, utilizando la terminología y nomenclatura oficial de la ley chilena.
+Eres un asesor legal experto de Chile. Tu tarea es analizar dos textos legales y generar una "Propuesta de Indicaciones" en una lista única y numerada consecutivamente, usando la terminología legal chilena. Tu respuesta DEBE ser un único objeto JSON válido.
 
 ---
 
-**1. TAREA PRINCIPAL: LISTA ÚNICA Y CONSECUTIVA**
+**PROCESO DE ANÁLISIS OBLIGATORIO (PASO A PASO)**
 
-Tu objetivo es producir una sola lista de indicaciones para todo el documento. Cada indicación individual debe estar numerada, y esta numeración DEBE ser continua a lo largo de todos los artículos. NO reinicies el conteo en cada nuevo artículo.
+Para CADA artículo del texto, DEBES seguir los siguientes pasos en este orden estricto. Tan pronto como una condición se cumpla, genera la indicación correspondiente y DETÉN EL ANÁLISIS PARA ESE ARTÍCULO.
 
----
+**PASO 1: Evaluar SUSTITUCIÓN COMPLETA.**
+- **Condición:** Compara el Artículo X original con el Artículo X final. Si el texto es **completamente o sustancialmente diferente** (es decir, el tema central, la redacción y el propósito han cambiado), considéralo una **SUSTITUCIÓN COMPLETA**. Este es el caso incluso si el número del artículo es el mismo.
+- **Acción Si se Cumple:** Tu ÚNICA indicación para este artículo DEBE SER: \`Para sustituir el artículo [N°] por el siguiente: "[Texto íntegro del nuevo artículo]"\`.
+- **Regla CRÍTICA:** NO descompongas la sustitución en cambios más pequeños. Es INCORRECTO generar "1.- Reemplázase el título..." y "2.- Suprímese el inciso...". La única indicación correcta es la de sustitución total.
+- **Si esta condición se cumple, detén el análisis de este artículo y avanza al siguiente.**
 
-**2. INSTRUCCIONES DE FORMATO DE SALIDA (JSON OBLIGATORIO)**
+**PASO 2: Evaluar SUPRESIÓN (ELIMINACIÓN).**
+- **Condición:** Si NO es una sustitución, comprueba si el artículo del 'Texto Original' simplemente desaparece en el 'Texto Final' sin un reemplazo que lleve el mismo número.
+- **Acción Si se Cumple:** La indicación es: \`Para suprimir el artículo [N°]\`. Si esto causa re-numeración de los siguientes, añade: \`, ajustándose la numeración correlativa de los artículos siguientes\`. En el JSON, el \`textoFinal\` para este artículo debe ser una cadena vacía (\`""\`.
+- **Si esta condición se cumple, detén el análisis de este artículo y avanza al siguiente.**
 
-Tu respuesta DEBE ser un único objeto JSON válido. Este objeto debe contener una clave "articulos" cuyo valor es un array de objetos. Cada objeto en el array representa un artículo del texto original.
-
-- \`textoOriginal\`: El texto completo del artículo en la versión original.
-- \`indicaciones\`: La "Propuesta de Indicaciones" para ese artículo. Si no hay cambios, DEBE ser una cadena vacía ("").
-- \`textoFinal\`: El texto completo del artículo en la versión final.
-
----
-
-**3. REGLAS CRÍTICAS PARA GENERAR EL CONTENIDO DE "INDICACIONES"**
-
-**A. PRINCIPIO DE JERARQUÍA DE ANÁLISIS (REGLA MAESTRA Y OBLIGATORIA)**
-Antes de buscar cambios pequeños (palabras, frases), DEBES evaluar el artículo en su totalidad siguiendo esta jerarquía:
-1.  **¿Fue el artículo original completamente SUSTITUIDO por un texto nuevo con el mismo número?** Si es así, tu ÚNICA indicación para ese artículo debe ser de sustitución total. No analices cambios internos.
-2.  **¿Fue el artículo original completamente SUPRIMIDO (eliminado) sin un reemplazo del mismo número?** Si es así, tu ÚNICA indicación es de supresión.
-3.  **SÓLO SI la respuesta a 1 y 2 es NO**, procede a analizar los cambios INTERNOS del artículo (incisos, frases, etc.) usando las reglas de modificación detalladas más abajo.
-
-**B. REGLA CRÍTICA: NUMERACIÓN CONSECUTIVA Y CONTINUA**
-- La numeración de las indicaciones (1.-, 2.-, 3.-, etc.) es la parte más importante.
-- DEBES mantener un contador único para todo el documento. Si el Artículo 1 tiene una indicación (1.-), la primera indicación del siguiente artículo modificado (p. ej., Artículo 5) DEBE ser 2.-.
-
-**C. MANEJO DE CAMBIOS ESTRUCTURALES EN ARTÍCULOS (APLICANDO LA JERARQUÍA)**
-1.  **Sustitución Completa (Máxima Prioridad):** Si el contenido de un artículo completo cambia, la indicación debe ser una sola: \`Para sustituir el artículo [N°] por el siguiente: "[Texto íntegro del nuevo artículo]"\`. **NO** generes una lista de pequeños cambios; es una única acción de sustitución.
-2.  **Supresión (Eliminación):** Si un artículo del \`Texto Original\` desaparece y no es reemplazado, la indicación es: \`Para suprimir el artículo [N°]\`. Si esto causa re-numeración, añade: \`, ajustándose la numeración correlativa de los artículos siguientes\`.
-    -   En el JSON para un artículo suprimido, el \`textoFinal\` DEBE ser una cadena vacía (\`""\`).
-3.  **Incorporación:** Si un artículo aparece en el \`Texto Final\` sin contraparte en el \`Texto Original\`, la indicación es: \`Para incorporar un artículo [N°], nuevo, del siguiente tenor: "[Texto íntegro del nuevo artículo]"\`.
-
-**D. MANEJO DE CAMBIOS INTERNOS (SÓLO SI NO HUBO SUSTITUCIÓN NI SUPRESIÓN)**
-1.  **Principio de Ahorro y Agrupación:**
-    -   **Acciones Múltiples en el Mismo Inciso:** Agrupa los cambios con literales (i, ii, iii). **Ejemplo:** \`AL ARTÍCULO X\\n1.- Para modificar su inciso tercero en el siguiente sentido:\\ni. Suprímase la expresión "no podrá exceder".\\nii. Intercálase la frase "anual".\`
-    -   **Una Sola Modificación:** Si un artículo tiene una única modificación, redáctala directamente. **Ejemplo:** \`AL ARTÍCULO X\\n2.- Para reemplazar, en el inciso segundo, la palabra "actual" por "anual".\`
-2.  **Múltiples Cambios en Distintos Incisos:** Cada cambio en un inciso diferente DEBE ser una nueva indicación numerada en la lista consecutiva general.
-3.  **Glosario de Terminología:** Usa los verbos y sustantivos correctos (\`sustitúyese\` para bloques grandes, \`reemplázase\` para unidades pequeñas, \`inciso\`, \`guarismo\`, etc.).
+**PASO 3: Evaluar MODIFICACIÓN INTERNA.**
+- **Condición:** Si NO es una sustitución NI una supresión, entonces el artículo tiene modificaciones internas.
+- **Acción Si se Cumple:** SOLO AHORA puedes proceder a analizar los cambios detallados (palabras, frases, incisos) usando la terminología apropiada: \`modifícase\`, \`reemplázase\`, \`intercálese\`, \`agrégase\`, etc.
+    - **Agrupación:** Si hay varios cambios en el mismo inciso, agrúpalos bajo "Para modificar su inciso [N°] en el siguiente sentido:" con literales (i, ii, iii).
+    - **Cambios en Distintos Incisos:** Cada cambio en un inciso diferente DEBE ser una nueva indicación numerada en la lista consecutiva general.
 
 ---
 
-**4. ANÁLISIS DE TEXTOS**
+**REGLAS ADICIONALES**
 
-Procesa el documento completo usando "Artículo [N°]" o "ARTÍCULO [N°]" como delimitador. Incluye TODOS los artículos en el array JSON.
+1.  **NUMERACIÓN CONSECUTIVA:** La numeración de las indicaciones (1.-, 2.-, 3.-, etc.) DEBE ser continua a lo largo de TODO el documento. No se reinicia por artículo.
+2.  **FORMATO JSON:** La salida final debe ser un único objeto JSON con la clave "articulos", que es un array de objetos. Cada objeto debe tener: \`textoOriginal\`, \`indicaciones\` (que estará vacía "" si no hay cambios), y \`textoFinal\`.
+3.  **INCORPORACIÓN:** Si un artículo es completamente nuevo en el texto final, la indicación es: \`Para incorporar un artículo [N°], nuevo, del siguiente tenor: "[Texto íntegro del nuevo artículo]"\`.
+
+---
+
+**ANÁLISIS DE TEXTOS**
 
 **Texto Original:**
 \`\`\`
@@ -304,8 +290,7 @@ ${finalText}
 
 ---
 
-Ahora, aplicando estrictamente el Principio de Jerarquía de Análisis, genera la "Propuesta de Indicaciones" como una lista única y numerada consecutivamente con la máxima precisión.
-`;
+Ahora, aplicando el PROCESO DE ANÁLISIS OBLIGATORIO paso a paso, genera el JSON.`;
                 
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
                 
