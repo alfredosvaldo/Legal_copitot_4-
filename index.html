@@ -121,7 +121,7 @@
     </div>
 
     <footer class="text-center p-4 text-gray-500 text-sm">
-        <p>Copiloto Legal v4.4.0 (Stable) | Última actualización: 19 de Agosto, 2025</p>
+        <p>Copiloto Legal v4.1.0  | Última actualización: 19 de Agosto, 2025</p>
     </footer>
 
     <div id="customAlert" class="modal-backdrop hidden">
@@ -157,7 +157,7 @@
             return cleaned.trim();
         }
         
-        function renderTable(articles) {
+function renderTable(articles) {
             const container = document.getElementById('resultsContainer');
             container.innerHTML = ''; 
 
@@ -182,12 +182,14 @@
 
             const tbody = document.createElement('tbody');
             articles.forEach(article => {
-                // *** INICIO DE LA CORRECCIÓN MEJORADA ***
-                // Se añaden verificaciones para todas las propiedades de texto para máxima seguridad.
+                // *** INICIO DE LA CORRECCIÓN CLAVE ***
+                // Nos aseguramos de que las tres propiedades siempre sean texto,
+                // incluso si faltan en la respuesta de la API.
+                // Esto evita el error en la librería diff.min.js.
                 const originalText = article.textoOriginal || '';
                 const finalText = article.textoFinal || '';
                 const indicationsText = article.indicaciones || '';
-                // *** FIN DE LA CORRECCIÓN MEJORADA ***
+                // *** FIN DE LA CORRECCIÓN CLAVE ***
 
                 const diff = Diff.diffWords(originalText, finalText, { ignoreWhitespace: true });
                 let originalHtml = '';
