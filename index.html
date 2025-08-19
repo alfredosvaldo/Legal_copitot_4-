@@ -6,10 +6,8 @@
     <title>Copiloto Legal: Comparador Legislativo Inteligente</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Library for Word export -->
     <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
     <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
-    <!-- Library for Diff viewer -->
     <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
     <style>
         body {
@@ -116,16 +114,14 @@
                   </button>
              </div>
              <div id="resultsContainer" class="w-full overflow-x-auto">
-                 <!-- The results table will be rendered here -->
-             </div>
+                 </div>
         </div>
     </div>
 
     <footer class="text-center p-4 text-gray-500 text-sm">
-        <p>Copiloto Legal v4.0.9 | Última actualización: 19 de Agosto, 2025</p>
+        <p>Copiloto Legal v4.1.0 | Última actualización: 19 de Agosto, 2025</p>
     </footer>
 
-    <!-- Modal for custom alerts -->
     <div id="customAlert" class="modal-backdrop hidden">
         <div class="modal-content">
             <p id="alertMessage"></p>
@@ -244,69 +240,82 @@
             const startTime = performance.now(); 
 
             /**
-             * PROMPT UPDATE v4.0.9
-             * The prompt's core logic has been rewritten to be more robust. It now explicitly
-             * differentiates between suppression, replacement, and reordering by analyzing both
-             * what happened to the original article's content and where the final article's content came from.
-             * A final cleanup instruction was also added to remove formatting artifacts.
+             * PROMPT UPDATE v4.1.0
+             * This prompt introduces a strict, hierarchical analysis process.
+             * 1.  **Article Segmentation:** It first forces the model to identify and isolate each article.
+             * 2.  **Hierarchical Logic:** It then applies a clear decision tree for each article (no change, suppression, total replacement) before attempting a detailed analysis.
+             * 3.  **Precise Terminology:** It provides clear templates for adding/removing specific elements like 'incisos' and 'literales', resolving the core issue from the previous version.
+             * 4.  **Worked Example:** A concrete example based on the user's problematic case is included to guide the model to the correct output format and logic.
              */
             const prompt = `
 **Rol y Objetivo:**
-Eres un asesor legal experto, especializado en la redacción de leyes en Chile. Tu tarea es analizar dos versiones de un texto legal ('Texto Original' y 'Texto Final') y generar una **"Propuesta de Indicaciones"** precisa y con formato correcto, manejando correctamente el reordenamiento y reemplazo de artículos.
+Eres un asesor legislativo experto en técnica parlamentaria chilena. Tu misión es analizar dos versiones de un texto legal ("Texto Original" y "Texto Final") y generar un conjunto de "indicaciones" (enmiendas) que transformen el original en el final. Tu respuesta debe ser un objeto JSON VÁLIDO y preciso.
 
 ---
-
-**1. TAREA PRINCIPAL: LISTA ÚNICA Y CONSECUTIVA**
-Tu objetivo es producir una sola lista de indicaciones para todo el documento. La numeración DEBE ser continua a lo largo de todos los artículos.
-
----
-
-**2. INSTRUCCIONES DE FORMATO DE SALIDA (JSON OBLIGATORIO Y VÁLIDO)**
-Tu respuesta DEBE ser un único objeto JSON válido.
-- **REGLA DE ESCAPE CRÍTICA:** Dentro de los valores de cadena de texto de JSON, cualquier comilla doble (") DEBE ser escapada con una barra invertida (\\"). Todos los saltos de línea DEBEN ser representados como \`\\n\`.
-- El JSON debe contener una clave "articulos" cuyo valor es un array de objetos con las claves: \`textoOriginal\`, \`indicaciones\`, \`textoFinal\`.
-- Para artículos sin cambios, el valor de \`indicaciones\` DEBE ser una cadena vacía ("").
+**Formato de Salida Obligatorio: JSON**
+La salida DEBE ser un único objeto JSON. Dentro de los valores de cadena del JSON, las comillas dobles (") deben escaparse como \\" y los saltos de línea como \\n. El objeto debe tener una clave "articulos" que contenga un array de objetos, cada uno con las claves: \`textoOriginal\`, \`indicaciones\` y \`textoFinal\`.
 
 ---
+**Proceso de Análisis Estricto (Seguir en Orden):**
 
-**3. METODOLOGÍA DE ANÁLISIS GLOBAL Y JERÁRQUICO (PROCESO OBLIGATORIO)**
-Aplica este proceso para cada artículo en orden:
+**PASO 1: SEGMENTACIÓN DE ARTÍCULOS**
+- Antes de comparar, divide mentalmente tanto el "Texto Original" como el "Texto Final" en sus artículos constituyentes (Artículo 1°, Artículo 2°, etc.). Todo el análisis posterior se hará artículo por artículo.
 
-**PASO 1: ANÁLISIS DE CAMBIOS ESTRUCTURALES MAYORES**
-Realiza este análisis ANTES de buscar cambios pequeños. Para cada artículo, determina cuál de las siguientes situaciones aplica.
+**PASO 2: COMPARACIÓN POR ARTÍCULO Y GENERACIÓN DE INDICACIONES**
+- Itera a través de cada artículo del "Texto Original" y compáralo con su contraparte en el "Texto Final".
+- Mantén un **contador único y consecutivo** para las indicaciones (1.-, 2.-, 3.-) a lo largo de todo el documento.
 
-- **A. REORDENAMIENTO:** ¿El contenido del "Artículo 7 Original" es casi idéntico al del "Artículo 6 Final"?
-  - **SI:** La indicación para el Artículo 6 es: \`Para reemplazar el artículo 6° por el actual artículo 7°, con las siguientes modificaciones: [detallar cambios si los hay].\` La indicación para el Artículo 7 sería \`Para suprimir el artículo 7°.\` y se detiene el análisis para el Art. 7.
+**Jerarquía de Reglas para Generar Indicaciones (aplicar en este orden de prioridad):**
 
-- **B. REEMPLAZO (CRÍTICO):** Si no hay reordenamiento, ¿el contenido del "Artículo 7 Final" es completamente NUEVO y diferente al "Artículo 7 Original"?
-  - **SI:** La indicación es: \`Para reemplazar el artículo 7° por el siguiente: "[Texto nuevo completo del Artículo 7 Final]".\` Si se cumple esta condición, detén el análisis para este artículo y pasa al siguiente. **Esta regla tiene prioridad sobre la supresión si hay contenido nuevo.**
+1.  **SIN CAMBIOS:** Si el Artículo X° original y final son idénticos, el campo \`indicaciones\` para ese artículo debe ser una cadena vacía (\`""\`).
 
-- **C. SUPRESIÓN:** Si A y B no aplican, ¿el "Artículo 7 Final" está vacío o ha sido eliminado?
-  - **SI:** La indicación es: \`Para suprimir el artículo 7°.\` Si se cumple esta condición, detén el análisis para este artículo y pasa al siguiente.
+2.  **SUPRESIÓN (Eliminación):**
+    - **De un Artículo Completo:** Si el Artículo X° existe en el original pero no en el final, la indicación es: \`Para suprimir el artículo X°.\`
+    - **De una Parte Interna (Inciso/Párrafo, Numeral, Literal):** Si se elimina un párrafo completo dentro de un artículo, la indicación es: \`Para suprimir el [inciso/párrafo] [segundo/tercero/etc.] del artículo X°.\` o \`Para suprimir el literal X) del artículo Y°.\`.
 
-**PASO 2: ANÁLISIS DE CONTENIDO DETALLADO (SI NO HAY CAMBIOS ESTRUCTURALES)**
-Si ninguno de los casos del PASO 1 aplica, procede con el análisis de contenido:
+3.  **ADICIÓN (Agregado):**
+    - **De un Artículo Completo:** Si el Artículo X° no existe en el original pero sí en el final, la indicación es: \`Para agregar el siguiente artículo X°, nuevo: "[Texto completo del nuevo artículo]"\`.
+    - **De una Parte Interna:** Si se agrega una nueva parte, la indicación es: \`Para agregar, en el artículo X°, el siguiente [inciso/literal] [letra/número], nuevo: "[Texto completo de la nueva parte]"\`.
 
-- **NIVEL 1 - CAMBIO MÍNIMO:** ¿El cambio es una sola palabra, un número o una frase corta? **Esta es la opción preferida.**
-  - **Ejemplo:** \`Para reemplazar, en su inciso primero, el vocablo "treinta" por "sesenta".\`
+4.  **SUSTITUCIÓN / REEMPLAZO:**
+    - **De un Artículo Completo:** Si el Artículo X° es reescrito por completo, la indicación es: \`Para reemplazar el artículo X° por el siguiente: "[Texto completo del artículo final]"\`. Usa esta opción si el cambio es muy extenso.
+    - **De una Parte Interna:** \`Para sustituir el [inciso/literal] [contexto] por el siguiente: "[Texto nuevo de la parte]"\`.
 
-- **NIVEL 2 - MÚLTIPLES CAMBIOS EN UN INCISO:** ¿Hay varios cambios pequeños en el MISMO inciso?
-  - **Ejemplo:** \`AL ARTÍCULO X\\n1.- Para modificar su inciso tercero en el siguiente sentido:\\ni. Suprímase la expresión "no podrá exceder".\\nii. Intercálase la frase "anual".\`
-
-- **NIVEL 3 - REESCRITURA COMPLETA (ÚLTIMO RECURSO):** ¿El inciso ha sido reescrito tan extensamente que los cambios pequeños no pueden describirse?
-  - **Ejemplo:** \`Para sustituir su inciso final por el siguiente: "[Texto nuevo completo]".\`
-
----
-
-**4. REGLAS CRÍTICAS DE REDACCIÓN Y NUMERACIÓN**
-- **NUMERACIÓN CONSECUTIVA:** Mantén un contador único para las indicaciones (1.-, 2.-, 3.-) a lo largo de TODO el documento.
-- **CONTEXTO:** Especifica siempre el 'inciso', 'numeral' o 'literal' afectado.
-- **LIMPIEZA FINAL (OBLIGATORIO):** Antes de finalizar, revisa el texto de todas las indicaciones generadas. Asegúrate de que no contengan artefactos de formato como \\" al inicio o final del texto citado. El texto debe ser limpio y profesional. Por ejemplo, cambia \`\\"frase\\"\` a \`"frase"\`.
+5.  **MODIFICACIÓN SIMPLE (Último Recurso):** Solo si ninguna de las reglas anteriores aplica, describe el cambio más pequeño posible.
+    - **Ejemplo:** \`Para reemplazar, en el inciso primero del artículo X°, la palabra "antiguo" por "nuevo".\`
 
 ---
+**Ejemplo Práctico para Guiar tu Lógica:**
 
-**5. ANÁLISIS DE TEXTOS**
-Procesa el documento completo. Incluye TODOS los artículos en el array JSON, incluso si no tienen cambios.
+* **Texto Original:**
+    \`\`\`
+    Artículo 1.- ... (párrafo 1) ...
+    ... (párrafo 2) ...
+    La prestación de los servicios señalados quedará sometida a la fiscalización de la Comisión para el Mercado Financiero.
+
+    Artículo 2.- ...
+    a) Plataformas de financiamiento colectivo.
+    b) Sistemas alternativos de transacción.
+    c) Asesoría crediticia y de inversión.
+    \`\`\`
+* **Texto Final:**
+    \`\`\`
+    Artículo 1.- ... (párrafo 1) ...
+    ... (párrafo 2) ...
+
+    Artículo 2.- ...
+    a) Plataformas de financiamiento colectivo.
+    b) Sistemas alternativos de transacción.
+    c) Asesoría crediticia y de inversión.
+    d) Custodia de instrumentos financieros u otros instrumentos públicos.
+    \`\`\`
+* **Indicaciones Correctas Esperadas:**
+    - Para el Artículo 1°: \`1.- Para suprimir el párrafo tercero del artículo 1°.\`
+    - Para el Artículo 2°: \`2.- Para agregar, en el artículo 2°, el siguiente literal d), nuevo:\\nd) Custodia de instrumentos financieros u otros instrumentos públicos.\`
+
+---
+**Textos a Procesar:**
+Incluye TODOS los artículos en el JSON, incluso aquellos sin cambios. Ahora, aplica este riguroso proceso a los siguientes textos:
 
 **Texto Original:**
 \`\`\`
@@ -317,10 +326,6 @@ ${originalText}
 \`\`\`
 ${finalText}
 \`\`\`
-
----
-
-Ahora, genera la "Propuesta de Indicaciones" aplicando rigurosamente el proceso de análisis para lograr la máxima precisión y un JSON perfectamente válido.
 `;
             
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
@@ -388,6 +393,7 @@ Ahora, genera la "Propuesta de Indicaciones" aplicando rigurosamente el proceso 
             
             const tableClone = table.cloneNode(true);
             
+            // Replace <br> with newlines for better Word formatting
             tableClone.querySelectorAll('br').forEach(br => br.parentNode.replaceChild(document.createTextNode('\n'), br));
 
             const content = `
