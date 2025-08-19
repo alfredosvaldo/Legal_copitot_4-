@@ -121,7 +121,7 @@
     </div>
 
     <footer class="text-center p-4 text-gray-500 text-sm">
-        <p>Copiloto Legal v4.0.1 | Última actualización: 19 de Agosto, 2025</p>
+        <p>Copiloto Legal v4.3.0 | Última actualización: 19 de Agosto, 2025</p>
     </footer>
 
     <div id="customAlert" class="modal-backdrop hidden">
@@ -198,11 +198,17 @@
                 });
 
                 const row = document.createElement('tr');
+                
+                // *** INICIO DE LA CORRECCIÓN ***
+                // Se cambió article.indicaciones.replace por (article.indicaciones || '').replace
+                // para evitar el error si la propiedad "indicaciones" no existe.
                 row.innerHTML = `
                     <td class="p-2 border align-top whitespace-pre-wrap">${originalHtml}</td>
-                    <td class="p-2 border align-top whitespace-pre-wrap">${article.indicaciones.replace(/\n/g, '<br>')}</td>
+                    <td class="p-2 border align-top whitespace-pre-wrap">${(article.indicaciones || '').replace(/\n/g, '<br>')}</td>
                     <td class="p-2 border align-top whitespace-pre-wrap">${finalHtml}</td>
                 `;
+                // *** FIN DE LA CORRECCIÓN ***
+
                 tbody.appendChild(row);
             });
             table.appendChild(tbody);
@@ -239,7 +245,7 @@
             const startTime = performance.now(); 
 
             try {
-                                const prompt = `
+                const prompt = `
 **Rol y Objetivo:**
 Eres un asesor legal experto de Chile. Tu tarea es analizar dos textos legales y generar una "Propuesta de Indicaciones" formal que describa los cambios con absoluta precisión, utilizando la terminología y nomenclatura oficial de la ley chilena para cambios legislativos. Tu respuesta DEBE ser un único objeto JSON válido.
 
@@ -291,7 +297,8 @@ ${finalText}
 \`\`\`
 ---
 Ahora, aplicando el PROCESO DE ANÁLISIS OBLIGATORIO, genera el JSON.
-`;                
+`;
+                
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
                 
                 const payload = {
