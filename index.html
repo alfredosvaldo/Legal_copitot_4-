@@ -6,8 +6,10 @@
     <title>Copiloto Legal: Comparador Legislativo Inteligente</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Library for Word export -->
     <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
     <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <!-- Library for Diff viewer -->
     <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
     <style>
         body {
@@ -114,14 +116,16 @@
                   </button>
              </div>
              <div id="resultsContainer" class="w-full overflow-x-auto">
-                 </div>
+                 <!-- The results table will be rendered here -->
+             </div>
         </div>
     </div>
 
     <footer class="text-center p-4 text-gray-500 text-sm">
-        <p>Copiloto Legal v4.1.1 | Última actualización: 19 de Agosto, 2025</p>
+        <p>Copiloto Legal v4.4.1 | Última actualización: 19 de Agosto, 2025</p>
     </footer>
 
+    <!-- Modal for custom alerts -->
     <div id="customAlert" class="modal-backdrop hidden">
         <div class="modal-content">
             <p id="alertMessage"></p>
@@ -141,19 +145,26 @@
             document.getElementById('customAlert').classList.remove('hidden');
         }
 
-        function cleanTextForJson(text) {
-            let cleaned = text.trim();
-            if (cleaned.startsWith('```json')) {
-                cleaned = cleaned.substring(7);
-            } else if (cleaned.startsWith('```')) {
-                 cleaned = cleaned.substring(3);
+        function parseCustomFormat(responseText) {
+            const articles = [];
+            const articleBlocks = responseText.split('<ARTICLE_END>');
+
+            for (const block of articleBlocks) {
+                if (block.trim() === '') continue;
+
+                const originalMatch = block.match(/<ORIGINAL>([\s\S]*?)<\/ORIGINAL>/);
+                const indicationsMatch = block.match(/<INDICACIONES>([\s\S]*?)<\/INDICACIONES>/);
+                const finalMatch = block.match(/<FINAL>([\s\S]*?)<\/FINAL>/);
+
+                if (originalMatch && indicationsMatch && finalMatch) {
+                    articles.push({
+                        textoOriginal: originalMatch[1].trim(),
+                        indicaciones: indicationsMatch[1].trim(),
+                        textoFinal: finalMatch[1].trim()
+                    });
+                }
             }
-            if (cleaned.endsWith('```')) {
-                cleaned = cleaned.slice(0, -3);
-            }
-            // This regex removes trailing commas to prevent a common JSON parsing error.
-            cleaned = cleaned.replace(/,(?=\s*[}\]])/g, ''); 
-            return cleaned.trim();
+            return articles;
         }
         
         function renderTable(articles) {
@@ -161,7 +172,7 @@
             container.innerHTML = ''; 
 
             if (!articles || articles.length === 0) {
-                container.textContent = 'No se encontraron artículos o no se pudo procesar el texto.';
+                container.innerHTML = `<p class="text-red-500">No se pudieron procesar los artículos a partir de la respuesta de la API. Verifique el texto de entrada.</p>`;
                 return;
             }
 
@@ -213,6 +224,38 @@
             document.getElementById('outputSection').classList.remove('hidden');
         }
 
+        async function fetchWithExponentialBackoff(url, options, maxRetries = 5) {
+            let lastError;
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    const response = await fetch(url, options);
+                    
+                    if (response.ok) {
+                        return response;
+                    }
+
+                    if (response.status === 429) {
+                        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                        console.log(`Rate limit exceeded. Retrying in ${Math.round(delay / 1000)}s...`);
+                        resultsContainer.innerHTML = `<p class="text-orange-500">Límite de solicitudes alcanzado. Reintentando automáticamente en ${Math.round(delay / 1000)} segundos...</p>`;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        lastError = new Error(`La solicitud a la API falló con el estado ${response.status}: ${await response.text()}`);
+                        continue;
+                    }
+
+                    throw new Error(`La solicitud a la API falló con el estado ${response.status}: ${await response.text()}`);
+
+                } catch (error) {
+                    lastError = error;
+                    const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                    console.log(`Request failed. Retrying in ${Math.round(delay / 1000)}s...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+            throw lastError;
+        }
+
+
         async function generateIndications() {
             const apiKey = document.getElementById('apiKey').value;
             const originalText = document.getElementById('originalText').value;
@@ -222,7 +265,7 @@
             const generateButton = document.getElementById('generateButton');
             const timerResult = document.getElementById('timerResult');
             
-            if (!apiKey) {
+             if (!apiKey) {
                 showAlert('Por favor, ingrese su clave de API de Gemini para continuar.');
                 return;
             }
@@ -241,42 +284,87 @@
             const startTime = performance.now(); 
 
             /**
-             * PROMPT UPDATE v4.1.1
-             * This prompt version elevates the JSON formatting rules to the highest priority to prevent
-             * parsing errors. It explicitly states that generating valid JSON is more important than
-             * the content itself, forcing the model to be extremely careful with quotes, newlines,
-             * and other control characters.
+             * PROMPT UPDATE v4.4.1
+             * This version incorporates a detailed glossary of legislative terms directly into the
+             * prompt. This forces the model to use the precise, official vocabulary for actions
+             * (e.g., "intercálese", "suprímese") and elements ("guarismo", "expresión"),
+             * significantly improving the professionalism and accuracy of the generated indications.
+             * The core sequential logic remains, but is now enhanced with this terminological dictionary.
              */
             const prompt = `
-**Rol:** Eres un asesor legislativo experto en Chile. Tu única tarea es comparar dos textos y generar un objeto JSON VÁLIDO que resuma los cambios.
+**Rol:** Eres un asesor legislativo experto en Chile, con especialización en técnica parlamentaria. Tu misión es generar una comparación completa, artículo por artículo, de dos textos legales, produciendo indicaciones precisas y profesionales que se adhieran estrictamente a la terminología oficial.
 
 ---
-**REGLA MÁS IMPORTANTE: FORMATO JSON VÁLIDO**
-Tu única salida DEBE ser un objeto JSON perfecto. Esta regla es más importante que la calidad del contenido.
-1.  **NO TEXTO EXTRA:** No incluyas \`\`\`json, explicaciones, o cualquier texto antes de \`{\` o después de \`}\`.
-2.  **ESCAPAR COMILLAS DOBLES:** Todas las comillas dobles (") DENTRO de los valores de texto del JSON DEBEN escaparse con una barra invertida (ej: \\"texto entre comillas\\").
-3.  **ESCAPAR SALTOS DE LÍNEA:** Todos los saltos de línea literales DENTRO de los valores de texto del JSON DEBEN ser reemplazados por el string \`\\n\`. No debe haber saltos de línea reales dentro de una cadena de texto.
+**1. GLOSARIO DE TÉRMINOS (USO OBLIGATORIO)**
+Debes usar exclusivamente los siguientes verbos y sustantivos al redactar las indicaciones:
 
-**Estructura del JSON:**
-El objeto raíz debe tener una clave "articulos", cuyo valor es un array de objetos. Cada objeto en el array debe tener tres claves: \`textoOriginal\`, \`indicaciones\`, y \`textoFinal\`.
+* **Verbos de Acción:**
+    * **Para adicionar información:** "Incorpórase", "Agrégase", "Añádese".
+    * **Para sustituir información:** "Sustitúyese", "Reemplázase".
+    * **Para adicionar entre vocablos:** "Intercálese".
+    * **Para eliminar información:** "Suprímese", "Elimínase".
+    * **Para modificar de forma genérica:** "Modifícase".
 
----
-**Proceso de Análisis para Generar el Contenido:**
-
-**1. SEGMENTAR:** Mentalmente, divide los textos en artículos (Artículo 1°, Artículo 2°, etc.).
-
-**2. COMPARAR ARTÍCULO POR ARTÍCULO:**
-- Mantén un contador único y consecutivo para todas las indicaciones (1.-, 2.-, 3.-, etc.) a lo largo de todo el documento.
-- Para cada artículo, aplica la siguiente jerarquía de reglas:
-    a. **SIN CAMBIOS:** Si el texto es idéntico, \`indicaciones\` es \`""\`.
-    b. **SUPRESIÓN:** Si se elimina un artículo, un inciso (párrafo) o un literal, usa la indicación \`Para suprimir el [artículo/inciso/literal] X°.\`.
-    c. **ADICIÓN:** Si se agrega un nuevo artículo, inciso o literal, usa la indicación \`Para agregar el siguiente [artículo/inciso/literal] X°, nuevo: "[texto completo]"\`.
-    d. **SUSTITUCIÓN:** Si una parte o todo el artículo es reemplazado, usa \`Para reemplazar/sustituir el [artículo/inciso/literal] X° por el siguiente: "[texto completo]"\`.
-    e. **MODIFICACIÓN SIMPLE:** Como último recurso para cambios pequeños, usa \`Para reemplazar, en el inciso X°, la palabra "Y" por "Z".\`.
+* **Sustantivos para Designar Elementos:**
+    * **Una cifra:** "el guarismo".
+    * **Un conjunto de palabras:** "la expresión".
+    * **Un número de norma en listado:** "el numeral" o "el literal".
+    * **Un artículo específico:** "el artículo".
+    * **Una parte de un artículo:** "el inciso".
 
 ---
-**Textos a Procesar:**
-Aplica el proceso y genera el objeto JSON VÁLIDO Y COMPLETO para los siguientes textos. Recuerda incluir todos los artículos.
+**2. REGLA DE ORO: PROCESAR TODO Y EN ORDEN**
+Tu tarea es recorrer los textos de principio a fin. DEBES generar un bloque de salida para CADA artículo. NO te detengas hasta haber analizado todos los artículos de ambos textos. Es un proceso secuencial.
+
+---
+**3. FORMATO DE SALIDA ESTRICTO (OBLIGATORIO)**
+La totalidad de tu respuesta DEBE usar este formato de etiquetas. No uses JSON.
+<ARTICLE_START>
+<ORIGINAL>...texto original aquí...</ORIGINAL>
+<INDICACIONES>...indicaciones aquí...</INDICACIONES>
+<FINAL>...texto final aquí...</FINAL>
+<ARTICLE_END>
+... (repetir para cada artículo) ...
+
+---
+**4. PRINCIPIOS DE REDACCIÓN AVANZADA**
+* **Encabezado Obligatorio:** Para CUALQUIER cambio en un artículo, la indicación DEBE empezar con el encabezado: \`AL ARTÍCULO [NÚMERO]\`.
+* **Agrupar Cambios (Ahorro de Instrucciones):** Si un mismo inciso tiene múltiples cambios, agrúpalos bajo una sola indicación numerada. Ejemplo: \`1) Para modificar el inciso primero en el siguiente sentido: a) Reemplázase la palabra "X" por "Y"; y b) Suprímese la frase "Z".\`
+
+---
+**5. PROCESO DE ANÁLISIS SECUENCIAL Y COMPLETO**
+Realiza una única pasada a través de los artículos. Para cada uno, aplica esta lógica:
+
+1.  **IDENTIFICAR ARTÍCULO:** Toma el siguiente artículo en secuencia (ej. "Artículo 5°").
+
+2.  **ANALIZAR CASO:**
+    * **CASO A: MODIFICACIÓN.** El artículo existe en ambos textos con el mismo número.
+        * Compara inciso por inciso.
+        * Genera una lista numerada y agrupada de indicaciones para CADA cambio, usando el **Glosario de Términos** obligatorio.
+        * Si no hay cambios, deja \`<INDICACIONES>\` vacío.
+
+    * **CASO B: ARTÍCULO NUEVO.** El artículo solo existe en el "Texto Final".
+        * \`<ORIGINAL>\` queda vacío.
+        * \`<INDICACIONES>\` es: \`Para agregar el siguiente artículo [número], nuevo, del siguiente tenor: "[texto completo]"\`.
+        * \`<FINAL>\` contiene el texto completo.
+
+    * **CASO C: ARTÍCULO ELIMINADO.** El artículo solo existe en el "Texto Original".
+        * \`<ORIGINAL>\` contiene el texto del artículo.
+        * \`<INDICACIONES>\` es: \`Para suprimir el artículo [número].\`.
+        * \`<FINAL>\` queda vacío.
+
+    * **CASO D: RENUMERACIÓN.** El contenido del "Artículo X" original es idéntico al del "Artículo Y" final.
+        * \`<ORIGINAL>\` contiene el texto del artículo original (X).
+        * \`<INDICACIONES>\` es: \`Para consignar que el artículo X ha pasado a ser artículo Y.\`
+        * \`<FINAL>\` contiene el texto del artículo final (Y).
+
+3.  **CONSTRUIR BLOQUE DE SALIDA:** Envuelve el resultado en las etiquetas \`<ARTICLE_START>\` y \`<ARTICLE_END>\`.
+
+4.  **REPETIR:** Continúa con el siguiente artículo hasta que no queden más.
+
+---
+**6. TEXTOS A PROCESAR**
+Aplica este proceso riguroso a los siguientes textos.
 
 **Texto Original:**
 \`\`\`
@@ -289,40 +377,29 @@ ${finalText}
 \`\`\`
 `;
             
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
             
             const payload = {
-                contents: [{ role: "user", parts: [{ text: prompt }] }],
-                generationConfig: {
-                    responseMimeType: "application/json",
-                }
+                contents: [{ role: "user", parts: [{ text: prompt }] }]
             };
 
-            let jsonTextForDebugging = '';
             try {
-                const response = await fetch(apiUrl, {
+                const response = await fetchWithExponentialBackoff(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
 
-                if (!response.ok) {
-                    const errorBody = await response.text();
-                    throw new Error(`La solicitud a la API falló con el estado ${response.status}: ${errorBody}`);
-                }
-
                 const result = await response.json();
-                const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-                jsonTextForDebugging = jsonText;
+                const responseText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-                if (!jsonText) {
+                if (!responseText) {
                     throw new Error('La respuesta de la API no contiene texto procesable.');
                 }
                 
-                const cleanedJson = cleanTextForJson(jsonText);
-                const data = JSON.parse(cleanedJson);
+                const articles = parseCustomFormat(responseText);
                 
-                renderTable(data.articulos);
+                renderTable(articles);
 
                 const endTime = performance.now();
                 const duration = ((endTime - startTime) / 1000).toFixed(2);
@@ -330,15 +407,7 @@ ${finalText}
 
             } catch (error) {
                 console.error('Error al procesar la solicitud:', error);
-                
-                let userMessage = `Ocurrió un error al generar las indicaciones. Error: ${error.message}`;
-
-                if (error instanceof SyntaxError && error.message.includes('JSON')) {
-                    userMessage = 'Error: La respuesta del modelo no era un JSON válido. Esto puede deberse a comillas dobles (") sin escapar o comas adicionales en el texto original. Por favor, intente de nuevo.';
-                    console.error("TEXTO JSON INVÁLIDO RECIBIDO:", jsonTextForDebugging);
-                }
-
-                resultsContainer.innerHTML = `<p class="text-red-500">${userMessage}</p>`;
+                resultsContainer.innerHTML = `<p class="text-red-500">Ocurrió un error al generar las indicaciones después de varios intentos. Error: ${error.message}</p>`;
             } finally {
                 generateButton.disabled = false;
                 generateButton.textContent = 'Generar Tabla Comparativa';
