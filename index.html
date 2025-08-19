@@ -119,7 +119,7 @@
     </div>
 
     <footer class="text-center p-4 text-gray-500 text-sm">
-        <p>Copiloto Legal v4.1.0 | Última actualización: 19 de Agosto, 2025</p>
+        <p>Copiloto Legal v4.1.1 | Última actualización: 19 de Agosto, 2025</p>
     </footer>
 
     <div id="customAlert" class="modal-backdrop hidden">
@@ -151,6 +151,7 @@
             if (cleaned.endsWith('```')) {
                 cleaned = cleaned.slice(0, -3);
             }
+            // This regex removes trailing commas to prevent a common JSON parsing error.
             cleaned = cleaned.replace(/,(?=\s*[}\]])/g, ''); 
             return cleaned.trim();
         }
@@ -240,82 +241,42 @@
             const startTime = performance.now(); 
 
             /**
-             * PROMPT UPDATE v4.1.0
-             * This prompt introduces a strict, hierarchical analysis process.
-             * 1.  **Article Segmentation:** It first forces the model to identify and isolate each article.
-             * 2.  **Hierarchical Logic:** It then applies a clear decision tree for each article (no change, suppression, total replacement) before attempting a detailed analysis.
-             * 3.  **Precise Terminology:** It provides clear templates for adding/removing specific elements like 'incisos' and 'literales', resolving the core issue from the previous version.
-             * 4.  **Worked Example:** A concrete example based on the user's problematic case is included to guide the model to the correct output format and logic.
+             * PROMPT UPDATE v4.1.1
+             * This prompt version elevates the JSON formatting rules to the highest priority to prevent
+             * parsing errors. It explicitly states that generating valid JSON is more important than
+             * the content itself, forcing the model to be extremely careful with quotes, newlines,
+             * and other control characters.
              */
             const prompt = `
-**Rol y Objetivo:**
-Eres un asesor legislativo experto en técnica parlamentaria chilena. Tu misión es analizar dos versiones de un texto legal ("Texto Original" y "Texto Final") y generar un conjunto de "indicaciones" (enmiendas) que transformen el original en el final. Tu respuesta debe ser un objeto JSON VÁLIDO y preciso.
+**Rol:** Eres un asesor legislativo experto en Chile. Tu única tarea es comparar dos textos y generar un objeto JSON VÁLIDO que resuma los cambios.
 
 ---
-**Formato de Salida Obligatorio: JSON**
-La salida DEBE ser un único objeto JSON. Dentro de los valores de cadena del JSON, las comillas dobles (") deben escaparse como \\" y los saltos de línea como \\n. El objeto debe tener una clave "articulos" que contenga un array de objetos, cada uno con las claves: \`textoOriginal\`, \`indicaciones\` y \`textoFinal\`.
+**REGLA MÁS IMPORTANTE: FORMATO JSON VÁLIDO**
+Tu única salida DEBE ser un objeto JSON perfecto. Esta regla es más importante que la calidad del contenido.
+1.  **NO TEXTO EXTRA:** No incluyas \`\`\`json, explicaciones, o cualquier texto antes de \`{\` o después de \`}\`.
+2.  **ESCAPAR COMILLAS DOBLES:** Todas las comillas dobles (") DENTRO de los valores de texto del JSON DEBEN escaparse con una barra invertida (ej: \\"texto entre comillas\\").
+3.  **ESCAPAR SALTOS DE LÍNEA:** Todos los saltos de línea literales DENTRO de los valores de texto del JSON DEBEN ser reemplazados por el string \`\\n\`. No debe haber saltos de línea reales dentro de una cadena de texto.
+
+**Estructura del JSON:**
+El objeto raíz debe tener una clave "articulos", cuyo valor es un array de objetos. Cada objeto en el array debe tener tres claves: \`textoOriginal\`, \`indicaciones\`, y \`textoFinal\`.
 
 ---
-**Proceso de Análisis Estricto (Seguir en Orden):**
+**Proceso de Análisis para Generar el Contenido:**
 
-**PASO 1: SEGMENTACIÓN DE ARTÍCULOS**
-- Antes de comparar, divide mentalmente tanto el "Texto Original" como el "Texto Final" en sus artículos constituyentes (Artículo 1°, Artículo 2°, etc.). Todo el análisis posterior se hará artículo por artículo.
+**1. SEGMENTAR:** Mentalmente, divide los textos en artículos (Artículo 1°, Artículo 2°, etc.).
 
-**PASO 2: COMPARACIÓN POR ARTÍCULO Y GENERACIÓN DE INDICACIONES**
-- Itera a través de cada artículo del "Texto Original" y compáralo con su contraparte en el "Texto Final".
-- Mantén un **contador único y consecutivo** para las indicaciones (1.-, 2.-, 3.-) a lo largo de todo el documento.
-
-**Jerarquía de Reglas para Generar Indicaciones (aplicar en este orden de prioridad):**
-
-1.  **SIN CAMBIOS:** Si el Artículo X° original y final son idénticos, el campo \`indicaciones\` para ese artículo debe ser una cadena vacía (\`""\`).
-
-2.  **SUPRESIÓN (Eliminación):**
-    - **De un Artículo Completo:** Si el Artículo X° existe en el original pero no en el final, la indicación es: \`Para suprimir el artículo X°.\`
-    - **De una Parte Interna (Inciso/Párrafo, Numeral, Literal):** Si se elimina un párrafo completo dentro de un artículo, la indicación es: \`Para suprimir el [inciso/párrafo] [segundo/tercero/etc.] del artículo X°.\` o \`Para suprimir el literal X) del artículo Y°.\`.
-
-3.  **ADICIÓN (Agregado):**
-    - **De un Artículo Completo:** Si el Artículo X° no existe en el original pero sí en el final, la indicación es: \`Para agregar el siguiente artículo X°, nuevo: "[Texto completo del nuevo artículo]"\`.
-    - **De una Parte Interna:** Si se agrega una nueva parte, la indicación es: \`Para agregar, en el artículo X°, el siguiente [inciso/literal] [letra/número], nuevo: "[Texto completo de la nueva parte]"\`.
-
-4.  **SUSTITUCIÓN / REEMPLAZO:**
-    - **De un Artículo Completo:** Si el Artículo X° es reescrito por completo, la indicación es: \`Para reemplazar el artículo X° por el siguiente: "[Texto completo del artículo final]"\`. Usa esta opción si el cambio es muy extenso.
-    - **De una Parte Interna:** \`Para sustituir el [inciso/literal] [contexto] por el siguiente: "[Texto nuevo de la parte]"\`.
-
-5.  **MODIFICACIÓN SIMPLE (Último Recurso):** Solo si ninguna de las reglas anteriores aplica, describe el cambio más pequeño posible.
-    - **Ejemplo:** \`Para reemplazar, en el inciso primero del artículo X°, la palabra "antiguo" por "nuevo".\`
-
----
-**Ejemplo Práctico para Guiar tu Lógica:**
-
-* **Texto Original:**
-    \`\`\`
-    Artículo 1.- ... (párrafo 1) ...
-    ... (párrafo 2) ...
-    La prestación de los servicios señalados quedará sometida a la fiscalización de la Comisión para el Mercado Financiero.
-
-    Artículo 2.- ...
-    a) Plataformas de financiamiento colectivo.
-    b) Sistemas alternativos de transacción.
-    c) Asesoría crediticia y de inversión.
-    \`\`\`
-* **Texto Final:**
-    \`\`\`
-    Artículo 1.- ... (párrafo 1) ...
-    ... (párrafo 2) ...
-
-    Artículo 2.- ...
-    a) Plataformas de financiamiento colectivo.
-    b) Sistemas alternativos de transacción.
-    c) Asesoría crediticia y de inversión.
-    d) Custodia de instrumentos financieros u otros instrumentos públicos.
-    \`\`\`
-* **Indicaciones Correctas Esperadas:**
-    - Para el Artículo 1°: \`1.- Para suprimir el párrafo tercero del artículo 1°.\`
-    - Para el Artículo 2°: \`2.- Para agregar, en el artículo 2°, el siguiente literal d), nuevo:\\nd) Custodia de instrumentos financieros u otros instrumentos públicos.\`
+**2. COMPARAR ARTÍCULO POR ARTÍCULO:**
+- Mantén un contador único y consecutivo para todas las indicaciones (1.-, 2.-, 3.-, etc.) a lo largo de todo el documento.
+- Para cada artículo, aplica la siguiente jerarquía de reglas:
+    a. **SIN CAMBIOS:** Si el texto es idéntico, \`indicaciones\` es \`""\`.
+    b. **SUPRESIÓN:** Si se elimina un artículo, un inciso (párrafo) o un literal, usa la indicación \`Para suprimir el [artículo/inciso/literal] X°.\`.
+    c. **ADICIÓN:** Si se agrega un nuevo artículo, inciso o literal, usa la indicación \`Para agregar el siguiente [artículo/inciso/literal] X°, nuevo: "[texto completo]"\`.
+    d. **SUSTITUCIÓN:** Si una parte o todo el artículo es reemplazado, usa \`Para reemplazar/sustituir el [artículo/inciso/literal] X° por el siguiente: "[texto completo]"\`.
+    e. **MODIFICACIÓN SIMPLE:** Como último recurso para cambios pequeños, usa \`Para reemplazar, en el inciso X°, la palabra "Y" por "Z".\`.
 
 ---
 **Textos a Procesar:**
-Incluye TODOS los artículos en el JSON, incluso aquellos sin cambios. Ahora, aplica este riguroso proceso a los siguientes textos:
+Aplica el proceso y genera el objeto JSON VÁLIDO Y COMPLETO para los siguientes textos. Recuerda incluir todos los artículos.
 
 **Texto Original:**
 \`\`\`
@@ -393,7 +354,6 @@ ${finalText}
             
             const tableClone = table.cloneNode(true);
             
-            // Replace <br> with newlines for better Word formatting
             tableClone.querySelectorAll('br').forEach(br => br.parentNode.replaceChild(document.createTextNode('\n'), br));
 
             const content = `
