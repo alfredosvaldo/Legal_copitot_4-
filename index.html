@@ -6,8 +6,10 @@
     <title>Copiloto Legal: Comparador Legislativo Inteligente</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Library for Word export -->
     <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
     <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <!-- Library for Diff viewer -->
     <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
     <style>
         body {
@@ -114,14 +116,16 @@
                   </button>
              </div>
              <div id="resultsContainer" class="w-full overflow-x-auto">
-                 </div>
+                 <!-- The results table will be rendered here -->
+             </div>
         </div>
     </div>
 
     <footer class="text-center p-4 text-gray-500 text-sm">
-        <p>Copiloto Legal v4.0.2 | Última actualización: 19 de Agosto, 2025</p>
+        <p>Copiloto Legal v4.0.9 | Última actualización: 19 de Agosto, 2025</p>
     </footer>
 
+    <!-- Modal for custom alerts -->
     <div id="customAlert" class="modal-backdrop hidden">
         <div class="modal-content">
             <p id="alertMessage"></p>
@@ -151,13 +155,10 @@
             if (cleaned.endsWith('```')) {
                 cleaned = cleaned.slice(0, -3);
             }
+            cleaned = cleaned.replace(/,(?=\s*[}\]])/g, ''); 
             return cleaned.trim();
         }
         
-        /**
-         * FIX #2 APPLIED HERE
-         * This function is now robust against 'article.indicaciones' being null or undefined.
-         */
         function renderTable(articles) {
             const container = document.getElementById('resultsContainer');
             container.innerHTML = ''; 
@@ -199,7 +200,6 @@
                     }
                 });
                 
-                // Defensive check to prevent TypeError if 'indicaciones' is not a string
                 const indicationsText = article.indicaciones || '';
 
                 const row = document.createElement('tr');
@@ -244,55 +244,69 @@
             const startTime = performance.now(); 
 
             /**
-             * FIX #1A APPLIED HERE
-             * Prompt is hardened with explicit rules for escaping JSON special characters.
+             * PROMPT UPDATE v4.0.9
+             * The prompt's core logic has been rewritten to be more robust. It now explicitly
+             * differentiates between suppression, replacement, and reordering by analyzing both
+             * what happened to the original article's content and where the final article's content came from.
+             * A final cleanup instruction was also added to remove formatting artifacts.
              */
             const prompt = `
 **Rol y Objetivo:**
-Eres un asesor legal experto, especializado en la redacción de leyes en Chile. Tu tarea es analizar dos versiones de un texto legal ('Texto Original' y 'Texto Final') y generar una **"Propuesta de Indicaciones"** que consolide TODOS los cambios en una lista única y numerada consecutivamente, utilizando la terminología y nomenclatura oficial de la ley chilena.
+Eres un asesor legal experto, especializado en la redacción de leyes en Chile. Tu tarea es analizar dos versiones de un texto legal ('Texto Original' y 'Texto Final') y generar una **"Propuesta de Indicaciones"** precisa y con formato correcto, manejando correctamente el reordenamiento y reemplazo de artículos.
 
 ---
 
 **1. TAREA PRINCIPAL: LISTA ÚNICA Y CONSECUTIVA**
-
-Tu objetivo es producir una sola lista de indicaciones para todo el documento. Cada indicación individual debe estar numerada, y esta numeración DEBE ser continua a lo largo de todos los artículos. NO reinicies el conteo en cada nuevo artículo.
+Tu objetivo es producir una sola lista de indicaciones para todo el documento. La numeración DEBE ser continua a lo largo de todos los artículos.
 
 ---
 
 **2. INSTRUCCIONES DE FORMATO DE SALIDA (JSON OBLIGATORIO Y VÁLIDO)**
-
-Tu respuesta DEBE ser un único objeto JSON válido. Este objeto debe contener una clave "articulos" cuyo valor es un array de objetos. Cada objeto en el array representa un artículo del texto original.
-
-- **REGLA DE ESCAPE CRÍTICA:** Dentro de los valores de cadena de texto de JSON (el contenido de \`textoOriginal\`, \`indicaciones\`, y \`textoFinal\`), cualquier comilla doble (") DEBE ser escapada con una barra invertida (por ejemplo, \\"). Todos los saltos de línea DEBEN ser representados como \`\\n\`. El no cumplimiento de esta regla resultará en un JSON inválido.
-
-- \`textoOriginal\`: El texto completo del artículo en la versión original (con comillas y saltos de línea escapados correctamente).
-- \`indicaciones\`: La "Propuesta de Indicaciones" para ese artículo (con comillas y saltos de línea escapados correctamente).
-  - Si hay cambios, el texto comenzará con "AL ARTÍCULO [N°]" seguido de una o más indicaciones numeradas.
-  - Si no hay cambios, este valor DEBE ser una cadena vacía ("").
-- \`textoFinal\`: El texto completo del artículo en la versión final (con comillas y saltos de línea escapados correctamente).
+Tu respuesta DEBE ser un único objeto JSON válido.
+- **REGLA DE ESCAPE CRÍTICA:** Dentro de los valores de cadena de texto de JSON, cualquier comilla doble (") DEBE ser escapada con una barra invertida (\\"). Todos los saltos de línea DEBEN ser representados como \`\\n\`.
+- El JSON debe contener una clave "articulos" cuyo valor es un array de objetos con las claves: \`textoOriginal\`, \`indicaciones\`, \`textoFinal\`.
+- Para artículos sin cambios, el valor de \`indicaciones\` DEBE ser una cadena vacía ("").
 
 ---
 
-**3. REGLAS CRÍTICAS PARA GENERAR EL CONTENIDO DE "INDICACIONES"**
+**3. METODOLOGÍA DE ANÁLISIS GLOBAL Y JERÁRQUICO (PROCESO OBLIGATORIO)**
+Aplica este proceso para cada artículo en orden:
 
-**A. REGLA CRÍTICA: NUMERACIÓN CONSECUTIVA Y CONTINUA**
-- La numeración de las indicaciones (1.-, 2.-, 3.-, etc.) es la parte más importante.
-- DEBES mantener un contador único para todo el documento. Si el Artículo 1 tiene dos indicaciones (1.- y 2.-), la primera indicación del siguiente artículo modificado (p. ej., Artículo 5) DEBE ser 3.-.
+**PASO 1: ANÁLISIS DE CAMBIOS ESTRUCTURALES MAYORES**
+Realiza este análisis ANTES de buscar cambios pequeños. Para cada artículo, determina cuál de las siguientes situaciones aplica.
 
-**B. ANÁLISIS, ESTRUCTURA Y PRINCIPIOS DE REDACCIÓN**
-1.  **Analizar con Precisión:** Compara 'Texto Original' y 'Texto Final' para identificar todas las adiciones, eliminaciones y sustituciones.
-2.  **Identificar la Unidad de Cambio Mínima (CRÍTICO):** Sé lo más específico posible.
-3.  **Dar Contexto:** Especifica siempre el 'inciso', 'numeral' o 'literal' afectado.
-4.  **Principio de Ahorro y Agrupación (OBLIGATORIO):**
-    - **Acciones Múltiples en el Mismo Inciso:** Agrupa bajo un mismo numeral usando literales (i, ii, iii).
-    - **Una Sola Modificación:** Redacta la indicación directamente.
-5.  **Múltiples Cambios en Distintos Incisos:** Cada cambio en un inciso diferente DEBE ser una nueva indicación numerada.
+- **A. REORDENAMIENTO:** ¿El contenido del "Artículo 7 Original" es casi idéntico al del "Artículo 6 Final"?
+  - **SI:** La indicación para el Artículo 6 es: \`Para reemplazar el artículo 6° por el actual artículo 7°, con las siguientes modificaciones: [detallar cambios si los hay].\` La indicación para el Artículo 7 sería \`Para suprimir el artículo 7°.\` y se detiene el análisis para el Art. 7.
+
+- **B. REEMPLAZO (CRÍTICO):** Si no hay reordenamiento, ¿el contenido del "Artículo 7 Final" es completamente NUEVO y diferente al "Artículo 7 Original"?
+  - **SI:** La indicación es: \`Para reemplazar el artículo 7° por el siguiente: "[Texto nuevo completo del Artículo 7 Final]".\` Si se cumple esta condición, detén el análisis para este artículo y pasa al siguiente. **Esta regla tiene prioridad sobre la supresión si hay contenido nuevo.**
+
+- **C. SUPRESIÓN:** Si A y B no aplican, ¿el "Artículo 7 Final" está vacío o ha sido eliminado?
+  - **SI:** La indicación es: \`Para suprimir el artículo 7°.\` Si se cumple esta condición, detén el análisis para este artículo y pasa al siguiente.
+
+**PASO 2: ANÁLISIS DE CONTENIDO DETALLADO (SI NO HAY CAMBIOS ESTRUCTURALES)**
+Si ninguno de los casos del PASO 1 aplica, procede con el análisis de contenido:
+
+- **NIVEL 1 - CAMBIO MÍNIMO:** ¿El cambio es una sola palabra, un número o una frase corta? **Esta es la opción preferida.**
+  - **Ejemplo:** \`Para reemplazar, en su inciso primero, el vocablo "treinta" por "sesenta".\`
+
+- **NIVEL 2 - MÚLTIPLES CAMBIOS EN UN INCISO:** ¿Hay varios cambios pequeños en el MISMO inciso?
+  - **Ejemplo:** \`AL ARTÍCULO X\\n1.- Para modificar su inciso tercero en el siguiente sentido:\\ni. Suprímase la expresión "no podrá exceder".\\nii. Intercálase la frase "anual".\`
+
+- **NIVEL 3 - REESCRITURA COMPLETA (ÚLTIMO RECURSO):** ¿El inciso ha sido reescrito tan extensamente que los cambios pequeños no pueden describirse?
+  - **Ejemplo:** \`Para sustituir su inciso final por el siguiente: "[Texto nuevo completo]".\`
 
 ---
 
-**4. ANÁLISIS DE TEXTOS**
+**4. REGLAS CRÍTICAS DE REDACCIÓN Y NUMERACIÓN**
+- **NUMERACIÓN CONSECUTIVA:** Mantén un contador único para las indicaciones (1.-, 2.-, 3.-) a lo largo de TODO el documento.
+- **CONTEXTO:** Especifica siempre el 'inciso', 'numeral' o 'literal' afectado.
+- **LIMPIEZA FINAL (OBLIGATORIO):** Antes de finalizar, revisa el texto de todas las indicaciones generadas. Asegúrate de que no contengan artefactos de formato como \\" al inicio o final del texto citado. El texto debe ser limpio y profesional. Por ejemplo, cambia \`\\"frase\\"\` a \`"frase"\`.
 
-Procesa el documento completo usando "Artículo [N°]" o "ARTÍCULO [N°]" como delimitador. Incluye TODOS los artículos en el array JSON, incluso si no tienen cambios.
+---
+
+**5. ANÁLISIS DE TEXTOS**
+Procesa el documento completo. Incluye TODOS los artículos en el array JSON, incluso si no tienen cambios.
 
 **Texto Original:**
 \`\`\`
@@ -306,7 +320,7 @@ ${finalText}
 
 ---
 
-Ahora, genera la "Propuesta de Indicaciones" como una lista única y numerada consecutivamente, asegurándote de que la salida sea un JSON perfectamente válido.
+Ahora, genera la "Propuesta de Indicaciones" aplicando rigurosamente el proceso de análisis para lograr la máxima precisión y un JSON perfectamente válido.
 `;
             
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
@@ -353,12 +367,8 @@ Ahora, genera la "Propuesta de Indicaciones" como una lista única y numerada co
                 
                 let userMessage = `Ocurrió un error al generar las indicaciones. Error: ${error.message}`;
 
-                /**
-                 * FIX #1B APPLIED HERE
-                 * Specific error handling for JSON parsing errors to give a more helpful message.
-                 */
                 if (error instanceof SyntaxError && error.message.includes('JSON')) {
-                    userMessage = 'Error: La respuesta del modelo no era un JSON válido, probablemente debido a comillas dobles (") sin escapar en el texto de entrada. Por favor, intente de nuevo.';
+                    userMessage = 'Error: La respuesta del modelo no era un JSON válido. Esto puede deberse a comillas dobles (") sin escapar o comas adicionales en el texto original. Por favor, intente de nuevo.';
                     console.error("TEXTO JSON INVÁLIDO RECIBIDO:", jsonTextForDebugging);
                 }
 
