@@ -35,16 +35,14 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        /* Styles for Diff Viewer */
         ins {
-            background-color: #d4edda; /* Light green */
+            background-color: #d4edda;
             text-decoration: none;
         }
         del {
-            background-color: #f8d7da; /* Light red */
+            background-color: #f8d7da;
             text-decoration: line-through;
         }
-        /* Custom modal for alerts */
         .modal-backdrop {
             position: fixed;
             top: 0;
@@ -121,7 +119,7 @@
     </div>
 
     <footer class="text-center p-4 text-gray-500 text-sm">
-        <p>Copiloto Legal v4.0.1 | Última actualización: 19 de Agosto, 2025</p>
+        <p>Copiloto Legal v4.0.2 | Última actualización: 19 de Agosto, 2025</p>
     </footer>
 
     <div id="customAlert" class="modal-backdrop hidden">
@@ -156,6 +154,10 @@
             return cleaned.trim();
         }
         
+        /**
+         * FIX #2 APPLIED HERE
+         * This function is now robust against 'article.indicaciones' being null or undefined.
+         */
         function renderTable(articles) {
             const container = document.getElementById('resultsContainer');
             container.innerHTML = ''; 
@@ -181,7 +183,7 @@
 
             const tbody = document.createElement('tbody');
             articles.forEach(article => {
-                const diff = Diff.diffWords(article.textoOriginal, article.textoFinal, { ignoreWhitespace: true });
+                const diff = Diff.diffWords(article.textoOriginal || '', article.textoFinal || '', { ignoreWhitespace: true });
                 let originalHtml = '';
                 let finalHtml = '';
 
@@ -196,11 +198,14 @@
                         finalHtml += value;
                     }
                 });
+                
+                // Defensive check to prevent TypeError if 'indicaciones' is not a string
+                const indicationsText = article.indicaciones || '';
 
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td class="p-2 border align-top whitespace-pre-wrap">${originalHtml}</td>
-                    <td class="p-2 border align-top whitespace-pre-wrap">${article.indicaciones.replace(/\n/g, '<br>')}</td>
+                    <td class="p-2 border align-top whitespace-pre-wrap">${indicationsText.replace(/\n/g, '<br>')}</td>
                     <td class="p-2 border align-top whitespace-pre-wrap">${finalHtml}</td>
                 `;
                 tbody.appendChild(row);
@@ -238,7 +243,11 @@
 
             const startTime = performance.now(); 
 
-            // const prompt = `
+            /**
+             * FIX #1A APPLIED HERE
+             * Prompt is hardened with explicit rules for escaping JSON special characters.
+             */
+            const prompt = `
 **Rol y Objetivo:**
 Eres un asesor legal experto, especializado en la redacción de leyes en Chile. Tu tarea es analizar dos versiones de un texto legal ('Texto Original' y 'Texto Final') y generar una **"Propuesta de Indicaciones"** que consolide TODOS los cambios en una lista única y numerada consecutivamente, utilizando la terminología y nomenclatura oficial de la ley chilena.
 
@@ -270,34 +279,14 @@ Tu respuesta DEBE ser un único objeto JSON válido. Este objeto debe contener u
 - La numeración de las indicaciones (1.-, 2.-, 3.-, etc.) es la parte más importante.
 - DEBES mantener un contador único para todo el documento. Si el Artículo 1 tiene dos indicaciones (1.- y 2.-), la primera indicación del siguiente artículo modificado (p. ej., Artículo 5) DEBE ser 3.-.
 
-**EJEMPLO DE NUMERACIÓN CONTINUA (FORMATO OBLIGATORIO):**
-\`\`\`
-// Indicaciones para el Artículo 2
-"indicaciones": "AL ARTÍCULO 2°\\n1.- Para reemplazar, en su inciso primero, el vocablo “treinta” por “sesenta”.\\n2.- Para suprimir, en su inciso segundo, la frase “y sin ulterior recurso”."
-
-// Indicaciones para el Artículo 5 (el siguiente con cambios)
-"indicaciones": "AL ARTÍCULO 5°\\n3.- Para sustituir su inciso final por el siguiente: “[Texto nuevo]”."
-\`\`\`
-
 **B. ANÁLISIS, ESTRUCTURA Y PRINCIPIOS DE REDACCIÓN**
 1.  **Analizar con Precisión:** Compara 'Texto Original' y 'Texto Final' para identificar todas las adiciones, eliminaciones y sustituciones.
-2.  **Identificar la Unidad de Cambio Mínima (CRÍTICO):** Antes de concluir que un 'inciso' completo ha sido modificado, verifica si el cambio es más pequeño. Sé lo más específico posible: ¿es una 'frase', 'expresión', 'palabra' o 'guarismo'?
+2.  **Identificar la Unidad de Cambio Mínima (CRÍTICO):** Sé lo más específico posible.
 3.  **Dar Contexto:** Especifica siempre el 'inciso', 'numeral' o 'literal' afectado.
 4.  **Principio de Ahorro y Agrupación (OBLIGATORIO):**
-    - **Acciones Múltiples en el Mismo Inciso:** Si realizas varias acciones diferentes en el mismo inciso, enuncia la ubicación una sola vez y detalla las acciones con literales (i, ii, iii). **Ejemplo:** \`AL ARTÍCULO X\\n1.- Para modificar su inciso tercero en el siguiente sentido:\\ni. Suprímase la expresión "no podrá exceder".\\nii. Intercálase, entre la expresión "tasa monetaria" y "ajustada", la frase "anual".\\niii. Reemplázase el guarismo "25" por "35".\`
-    - **Una Sola Modificación:** Si un artículo tiene una única modificación, redáctala directamente sin el encabezado "Para modificar...". **Ejemplo:** \`AL ARTÍCULO X\\n2.- Para reemplazar, en el inciso segundo, la palabra "actual" por "anual".\`
-5.  **Múltiples Cambios en Distintos Incisos:** Si un artículo tiene modificaciones en distintos incisos, cada cambio en un inciso diferente DEBE ser una nueva indicación numerada en la lista consecutiva general.
-6.  **Agregar Artículos Nuevos:** Usa el formato \`ARTÍCULO X, NUEVO\` para indicar la adición de un nuevo artículo.
-
-**C. GLOSARIO DE TERMINOLOGÍA (USO OBLIGATORIO)**
-- **Verbos de Acción:**
-    - *reemplázase / sustitúyese:* Usar cuando se sustituye información. \`sustitúyese\` es para bloques grandes (un \`inciso\` completo), mientras que \`reemplázase\` es para unidades más pequeñas (\`expresión\`, \`frase\`, \`palabra\`).
-    - *incorpórase / agrégase / añádese:* Usar cuando se añade nueva información.
-    - *suprímese / elimínase:* Usar cuando se elimina información.
-    - *intercálese:* Usar específicamente cuando se añade información entre palabras existentes.
-    - *modifícase:* Usar solo como verbo introductorio para agrupar cambios en un inciso.
-- **Sustantivos para Unidades de Texto:**
-    - *la expresión, la frase, la oración, la palabra / el vocablo, el inciso, el guarismo*.
+    - **Acciones Múltiples en el Mismo Inciso:** Agrupa bajo un mismo numeral usando literales (i, ii, iii).
+    - **Una Sola Modificación:** Redacta la indicación directamente.
+5.  **Múltiples Cambios en Distintos Incisos:** Cada cambio en un inciso diferente DEBE ser una nueva indicación numerada.
 
 ---
 
@@ -317,9 +306,10 @@ ${finalText}
 
 ---
 
-Ahora, genera la "Propuesta de Indicaciones" como una lista única y numerada consecutivamente con la máxima precisión, asegurándote de que la salida sea un JSON perfectamente válido.
+Ahora, genera la "Propuesta de Indicaciones" como una lista única y numerada consecutivamente, asegurándote de que la salida sea un JSON perfectamente válido.
 `;
-            // const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+            
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
             
             const payload = {
                 contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -328,7 +318,7 @@ Ahora, genera la "Propuesta de Indicaciones" como una lista única y numerada co
                 }
             };
 
-            let jsonTextForDebugging = ''; // Variable to hold the raw text for debugging
+            let jsonTextForDebugging = '';
             try {
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -343,14 +333,14 @@ Ahora, genera la "Propuesta de Indicaciones" como una lista única y numerada co
 
                 const result = await response.json();
                 const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-                jsonTextForDebugging = jsonText; // Store for potential error logging
+                jsonTextForDebugging = jsonText;
 
                 if (!jsonText) {
                     throw new Error('La respuesta de la API no contiene texto procesable.');
                 }
                 
                 const cleanedJson = cleanTextForJson(jsonText);
-                const data = JSON.parse(cleanedJson); // The parsing happens here
+                const data = JSON.parse(cleanedJson);
                 
                 renderTable(data.articulos);
 
@@ -361,13 +351,18 @@ Ahora, genera la "Propuesta de Indicaciones" como una lista única y numerada co
             } catch (error) {
                 console.error('Error al procesar la solicitud:', error);
                 
-                let userMessage = `Ocurrió un error al generar las indicaciones. Por favor, revise la consola para más detalles. Error: ${error.message}`;
+                let userMessage = `Ocurrió un error al generar las indicaciones. Error: ${error.message}`;
 
-                // if (error instanceof SyntaxError && error.message.includes('JSON')) {
-                    userMessage = 'Error: La respuesta del modelo no era un JSON válido, probablemente debido a comillas dobles (") sin escapar en el texto de entrada. La herramienta se basa en una respuesta JSON válida para funcionar. Por favor, intente de nuevo.';
+                /**
+                 * FIX #1B APPLIED HERE
+                 * Specific error handling for JSON parsing errors to give a more helpful message.
+                 */
+                if (error instanceof SyntaxError && error.message.includes('JSON')) {
+                    userMessage = 'Error: La respuesta del modelo no era un JSON válido, probablemente debido a comillas dobles (") sin escapar en el texto de entrada. Por favor, intente de nuevo.';
                     console.error("TEXTO JSON INVÁLIDO RECIBIDO:", jsonTextForDebugging);
                 }
-                // resultsContainer.innerHTML = `<p class="text-red-500">${userMessage}</p>`;
+
+                resultsContainer.innerHTML = `<p class="text-red-500">${userMessage}</p>`;
             } finally {
                 generateButton.disabled = false;
                 generateButton.textContent = 'Generar Tabla Comparativa';
@@ -381,21 +376,10 @@ Ahora, genera la "Propuesta de Indicaciones" como una lista única y numerada co
                 return;
             }
             
-            // Create a clone to manipulate for export without affecting the displayed table
             const tableClone = table.cloneNode(true);
             
-            // Convert <br> tags back to newlines for proper formatting in Word
             tableClone.querySelectorAll('br').forEach(br => br.parentNode.replaceChild(document.createTextNode('\n'), br));
 
-            tableClone.style.borderCollapse = 'collapse';
-            tableClone.style.width = '100%';
-            const cells = tableClone.querySelectorAll('th, td');
-            cells.forEach(cell => {
-                cell.style.border = '1px solid black';
-                cell.style.padding = '5px';
-                cell.style.verticalAlign = 'top';
-            });
-            
             const content = `
                 <!DOCTYPE html>
                 <html>
@@ -406,8 +390,8 @@ Ahora, genera la "Propuesta de Indicaciones" como una lista única y numerada co
                         table { border-collapse: collapse; width: 100%; }
                         th, td { border: 1px solid black; padding: 8px; text-align: left; vertical-align: top; white-space: pre-wrap; }
                         th { background-color: #f2f2f2; }
-                        ins { background-color: #d4edda; text-decoration: none; }
-                        del { background-color: #f8d7da; text-decoration: line-through; }
+                        ins { background-color: #d4edda; text-decoration: none; color: black; }
+                        del { background-color: #f8d7da; text-decoration: line-through; color: black; }
                     </style>
                 </head>
                 <body>
