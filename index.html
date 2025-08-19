@@ -6,10 +6,8 @@
     <title>Copiloto Legal: Comparador Legislativo Inteligente</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Library for Word export -->
     <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
     <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
-    <!-- Library for Diff viewer -->
     <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
     <style>
         body {
@@ -112,22 +110,20 @@
 
         <div id="outputSection" class="bg-white p-6 rounded-lg shadow-md hidden">
              <div class="flex justify-between items-center mb-4">
-                 <h2 class="text-xl font-semibold">Resultado Comparativo <span id="timerResult" class="text-sm font-normal text-gray-500 ml-2"></span></h2>
-                 <button id="exportButton" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition">
-                     Exportar a Word
-                 </button>
+                  <h2 class="text-xl font-semibold">Resultado Comparativo <span id="timerResult" class="text-sm font-normal text-gray-500 ml-2"></span></h2>
+                  <button id="exportButton" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition">
+                       Exportar a Word
+                  </button>
              </div>
              <div id="resultsContainer" class="w-full overflow-x-auto">
-                 <!-- The results table will be rendered here -->
-             </div>
+                  </div>
         </div>
     </div>
 
     <footer class="text-center p-4 text-gray-500 text-sm">
-        <p>Copiloto Legal v4.0.0 | Última actualización: 18 de Agosto, 2025</p>
+        <p>Copiloto Legal v4.0.1 | Última actualización: 19 de Agosto, 2025</p>
     </footer>
 
-    <!-- Modal for custom alerts -->
     <div id="customAlert" class="modal-backdrop hidden">
         <div class="modal-content">
             <p id="alertMessage"></p>
@@ -302,6 +298,15 @@ Tu respuesta DEBE ser un único objeto JSON válido. Este objeto debe contener u
 - **Sustantivos para Unidades de Texto:**
     - *la expresión, la frase, la oración, la palabra / el vocablo, el inciso, el guarismo*.
 
+**D. MANEJO DE ELIMINACIÓN Y RENUMERACIÓN DE ARTÍCULOS (NUEVA REGLA CRÍTICA)**
+1.  **Detección:** Identifica si se ha eliminado un artículo completo. Esto ocurre cuando un artículo del \`Texto Original\` no existe en el \`Texto Final\`, provocando que los artículos siguientes ajusten su numeración (p. ej., el Artículo 5° original pasa a ser el Artículo 4° final porque el 4° fue eliminado).
+2.  **Generación de Indicación:** Si detectas una eliminación, genera una única indicación para el artículo que fue suprimido. Usa el formato preciso: \`Para suprimir el artículo [N°], ajustándose la numeración correlativa de los artículos siguientes.\` Esta indicación debe seguir la numeración consecutiva general del documento.
+3.  **Estructura JSON para el Artículo Suprimido:** En el objeto JSON correspondiente al artículo que fue eliminado:
+    -   \`textoOriginal\`: Contendrá el texto completo del artículo eliminado.
+    -   \`indicaciones\`: Contendrá la indicación de supresión (p. ej., "AL ARTÍCULO 4°\\n[N].- Para suprimirlo...").
+    -   \`textoFinal\`: DEBE ser una cadena vacía (\`""\`).
+4.  **Artículos Re-numerados:** Los artículos cuyo contenido es idéntico pero solo ha cambiado su número (p. ej., el antiguo Artículo 5° es ahora el 4°) deben ser tratados como artículos sin cambios. Su campo \`indicaciones\` debe ser una cadena vacía (\`""\`).
+
 ---
 
 **4. ANÁLISIS DE TEXTOS**
@@ -323,7 +328,7 @@ ${finalText}
 Ahora, genera la "Propuesta de Indicaciones" como una lista única y numerada consecutivamente con la máxima precisión.
 `;
                 
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
                 
                 const payload = {
                     contents: [{ role: "user", parts: [{ text: prompt }] }],
