@@ -116,13 +116,13 @@
                   </button>
              </div>
              <div id="resultsContainer" class="w-full overflow-x-auto">
-                 <!-- The results table will be rendered here -->
+                  <!-- The results table will be rendered here -->
              </div>
         </div>
     </div>
 
     <footer class="text-center p-4 text-gray-500 text-sm">
-        <p>Copiloto Legal v4.4.1 | Última actualización: 19 de Agosto, 2025</p>
+        <p>Copiloto Legal v4.5.1 | Última actualización: 20 de Agosto, 2025</p>
     </footer>
 
     <!-- Modal for custom alerts -->
@@ -139,6 +139,12 @@
         document.getElementById('alertCloseButton').addEventListener('click', () => {
             document.getElementById('customAlert').classList.add('hidden');
         });
+
+        // SUGGESTION: For improved UX, you could store the API key in sessionStorage.
+        // It persists only for the session and is more secure than localStorage.
+        // Example:
+        // On input: sessionStorage.setItem('geminiApiKey', apiKey);
+        // On load: document.getElementById('apiKey').value = sessionStorage.getItem('geminiApiKey') || '';
 
         function showAlert(message) {
             document.getElementById('alertMessage').textContent = message;
@@ -265,7 +271,7 @@
             const generateButton = document.getElementById('generateButton');
             const timerResult = document.getElementById('timerResult');
             
-             if (!apiKey) {
+            if (!apiKey) {
                 showAlert('Por favor, ingrese su clave de API de Gemini para continuar.');
                 return;
             }
@@ -284,12 +290,13 @@
             const startTime = performance.now(); 
 
             /**
-             * PROMPT UPDATE v4.4.1
-             * This version incorporates a detailed glossary of legislative terms directly into the
-             * prompt. This forces the model to use the precise, official vocabulary for actions
-             * (e.g., "intercálese", "suprímese") and elements ("guarismo", "expresión"),
-             * significantly improving the professionalism and accuracy of the generated indications.
-             * The core sequential logic remains, but is now enhanced with this terminological dictionary.
+             * PROMPT UPDATE v4.5.0
+             * This version refines the prompt to explicitly use the full name of the article in
+             * the indications header, as requested by the user.
+             * 1.  **Full Article Name:** The instruction for the header now specifies using the
+             * complete name (e.g., "SEGUNDO TRANSITORIO") instead of just the number.
+             * 2.  **Reinforced Logic:** The core sequential logic and other advanced rules
+             * (glossary, correlative numbering, etc.) are maintained to ensure robust performance.
              */
             const prompt = `
 **Rol:** Eres un asesor legislativo experto en Chile, con especialización en técnica parlamentaria. Tu misión es generar una comparación completa, artículo por artículo, de dos textos legales, produciendo indicaciones precisas y profesionales que se adhieran estrictamente a la terminología oficial.
@@ -313,8 +320,9 @@ Debes usar exclusivamente los siguientes verbos y sustantivos al redactar las in
     * **Una parte de un artículo:** "el inciso".
 
 ---
-**2. REGLA DE ORO: PROCESAR TODO Y EN ORDEN**
-Tu tarea es recorrer los textos de principio a fin. DEBES generar un bloque de salida para CADA artículo. NO te detengas hasta haber analizado todos los artículos de ambos textos. Es un proceso secuencial.
+**2. REGLAS DE ORO (MÁXIMA PRIORIDAD)**
+* **NUMERACIÓN CORRELATIVA GLOBAL:** La numeración de las indicaciones (1), 2), 3), etc.) DEBE ser continua a lo largo de TODO el documento. NO se reinicia con cada artículo. Un cambio en el inciso primero es "1)", un cambio en el inciso tercero del mismo artículo es "2)", y así sucesivamente.
+* **PROCESAR TODO Y EN ORDEN:** Recorre los textos de principio a fin. DEBES generar un bloque de salida para CADA artículo. NO te detengas.
 
 ---
 **3. FORMATO DE SALIDA ESTRICTO (OBLIGATORIO)**
@@ -327,35 +335,36 @@ La totalidad de tu respuesta DEBE usar este formato de etiquetas. No uses JSON.
 ... (repetir para cada artículo) ...
 
 ---
-**4. PRINCIPIOS DE REDACCIÓN AVANZADA**
-* **Encabezado Obligatorio:** Para CUALQUIER cambio en un artículo, la indicación DEBE empezar con el encabezado: \`AL ARTÍCULO [NÚMERO]\`.
-* **Agrupar Cambios (Ahorro de Instrucciones):** Si un mismo inciso tiene múltiples cambios, agrúpalos bajo una sola indicación numerada. Ejemplo: \`1) Para modificar el inciso primero en el siguiente sentido: a) Reemplázase la palabra "X" por "Y"; y b) Suprímese la frase "Z".\`
-
----
-**5. PROCESO DE ANÁLISIS SECUENCIAL Y COMPLETO**
+**4. PROCESO DE ANÁLISIS SECUENCIAL Y COMPLETO**
 Realiza una única pasada a través de los artículos. Para cada uno, aplica esta lógica:
 
-1.  **IDENTIFICAR ARTÍCULO:** Toma el siguiente artículo en secuencia (ej. "Artículo 5°").
+1.  **IDENTIFICAR ARTÍCULO:** Toma el siguiente artículo en secuencia (ej. "Artículo 2°").
 
 2.  **ANALIZAR CASO:**
     * **CASO A: MODIFICACIÓN.** El artículo existe en ambos textos con el mismo número.
-        * Compara inciso por inciso.
-        * Genera una lista numerada y agrupada de indicaciones para CADA cambio, usando el **Glosario de Términos** obligatorio.
-        * Si no hay cambios, deja \`<INDICACIONES>\` vacío.
+        * **Encabezado:** Comienza la sección de indicaciones con el encabezado que incluya el nombre completo del artículo (ej: \`AL ARTÍCULO SEGUNDO TRANSITORIO\`).
+        * **SUB-PROCESO CRÍTICO: ANÁLISIS INCISO POR INCISO.**
+            * Compara los incisos del artículo original con los del final.
+            * **Para CADA inciso que presente un cambio, genera una indicación numerada INDIVIDUAL.**
+            * **Ejemplo:** Si el inciso primero se modifica y el inciso tercero se suprime, el resultado DEBE ser:
+              \`AL ARTÍCULO SEGUNDO TRANSITORIO
+              1) Para modificar el inciso primero en el siguiente sentido: a) Reemplázase la expresión "y los sistemas" por "o para el Coordinador y los sistemas".
+              2) Para suprimir el inciso tercero.\`
+            * Si no hay cambios en ningún inciso, deja \`<INDICACIONES>\` vacío.
 
     * **CASO B: ARTÍCULO NUEVO.** El artículo solo existe en el "Texto Final".
         * \`<ORIGINAL>\` queda vacío.
-        * \`<INDICACIONES>\` es: \`Para agregar el siguiente artículo [número], nuevo, del siguiente tenor: "[texto completo]"\`.
+        * \`<INDICACIONES>\` es: \`[N° correlativo]) Para agregar el siguiente artículo [nombre completo], nuevo, del siguiente tenor: "[texto completo]"\`.
         * \`<FINAL>\` contiene el texto completo.
 
     * **CASO C: ARTÍCULO ELIMINADO.** El artículo solo existe en el "Texto Original".
         * \`<ORIGINAL>\` contiene el texto del artículo.
-        * \`<INDICACIONES>\` es: \`Para suprimir el artículo [número].\`.
+        * \`<INDICACIONES>\` es: \`[N° correlativo]) Para suprimir el artículo [nombre completo].\`.
         * \`<FINAL>\` queda vacío.
 
     * **CASO D: RENUMERACIÓN.** El contenido del "Artículo X" original es idéntico al del "Artículo Y" final.
         * \`<ORIGINAL>\` contiene el texto del artículo original (X).
-        * \`<INDICACIONES>\` es: \`Para consignar que el artículo X ha pasado a ser artículo Y.\`
+        * \`<INDICACIONES>\` es: \`[N° correlativo]) Para consignar que el artículo X ha pasado a ser artículo Y.\`
         * \`<FINAL>\` contiene el texto del artículo final (Y).
 
 3.  **CONSTRUIR BLOQUE DE SALIDA:** Envuelve el resultado en las etiquetas \`<ARTICLE_START>\` y \`<ARTICLE_END>\`.
@@ -363,7 +372,7 @@ Realiza una única pasada a través de los artículos. Para cada uno, aplica est
 4.  **REPETIR:** Continúa con el siguiente artículo hasta que no queden más.
 
 ---
-**6. TEXTOS A PROCESAR**
+**5. TEXTOS A PROCESAR**
 Aplica este proceso riguroso a los siguientes textos.
 
 **Texto Original:**
